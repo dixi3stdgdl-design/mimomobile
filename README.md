@@ -6,6 +6,11 @@ App Android nativa que conecta con MiMo Code CLI vía WebSocket. Chat, remote de
 
 ---
 
+## Soporte el desarrollo
+
+[![Pro](https://img.shields.io/badge/Pro-$9.99%2Fmes-2563EB?style=for-the-badge&logo=android&logoColor=white)](https://link.mercadopago.com.mx/mimomobile)
+[![Team](https://img.shields.io/badge/Team-$29.99%2Fmes-16A34A?style=for-the-badge&logo=android&logoColor=white)](https://link.mercadopago.com.mx/mimomobile)
+
 ## Modelo de Negocio
 
 | Tier | Precio | Features |
@@ -13,7 +18,6 @@ App Android nativa que conecta con MiMo Code CLI vía WebSocket. Chat, remote de
 | **Free** | $0 | 1 dispositivo, chat básico |
 | **Pro** | $9.99/mes | 5 dispositivos, remote desktop, file manager |
 | **Team** | $29.99/mes | Ilimitado, prioridad, soporte |
-| **Enterprise** | Custom | API, on-premise, SLA |
 
 ---
 
