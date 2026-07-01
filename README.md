@@ -99,6 +99,15 @@ MIMO_HTTP_PORT=8080              # Puerto HTTP
 
 ---
 
+## Soporte el desarrollo
+
+Si MiMo Mobile te es útil, considera suscribirte para apoyar el desarrollo continuo:
+
+[![Pro](https://img.shields.io/badge/Pro-$9.99%2Fmes-2563EB?style=for-the-badge&logo=stripe)](https://buy.stripe.com/your-pro-link)
+[![Team](https://img.shields.io/badge/Team-$29.99%2Fmes-16A34A?style=for-the-badge&logo=stripe)](https://buy.stripe.com/your-team-link)
+
+---
+
 ## Contacto
 
 - **GitHub**: [@dixi3stdgdl-design](https://github.com/dixi3stdgdl-design)
