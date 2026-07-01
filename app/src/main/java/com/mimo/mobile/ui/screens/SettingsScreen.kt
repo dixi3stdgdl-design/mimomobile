@@ -393,7 +393,7 @@ fun PremiumSection() {
                 features = listOf("5 devices", "Remote desktop", "File manager", "Priority support"),
                 isRecommended = true,
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://buy.stripe.com/your-pro-link"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://link.mercadopago.com.mx/mimomobile"))
                     context.startActivity(intent)
                 }
             )
@@ -407,7 +407,7 @@ fun PremiumSection() {
                 period = "/month",
                 features = listOf("Unlimited devices", "All Pro features", "Dedicated support", "Early access"),
                 onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://buy.stripe.com/your-team-link"))
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://link.mercadopago.com.mx/mimomobile"))
                     context.startActivity(intent)
                 }
             )

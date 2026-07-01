@@ -1,13 +1,14 @@
 package com.mimo.mobile.ui.screens
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -15,248 +16,315 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mimo.mobile.viewmodel.MiMoViewModel
-import kotlin.math.*
 
-data class BuildSegment(
+private val CodeFont = FontFamily.Monospace
+private val EditorBg = Color(0xFF0D1117)
+private val EditorLineNum = Color(0xFF484F58)
+private val EditorCursor = Color(0xFF58A6FF)
+private val EditorGreen = Color(0xFF7EE787)
+private val EditorBlue = Color(0xFF79C0FF)
+private val EditorPurple = Color(0xFFD2A8FF)
+private val EditorYellow = Color(0xFFE3B341)
+private val EditorRed = Color(0xFFFF7B72)
+private val EditorCyan = Color(0xFFA5D6FF)
+private val EditorOrange = Color(0xFFFFA657)
+
+data class SourceFile(
     val name: String,
-    val platform: String,
-    val status: SegmentStatus,
-    val progress: Float,
-    val files: List<String>
+    val language: String,
+    val lines: List<String>,
+    val isComplete: Boolean = false
 )
-
-enum class SegmentStatus { PENDING, BUILDING, COMPLETE, ERROR }
 
 @Composable
 fun BuildVisualizerScreen(vm: MiMoViewModel) {
-    var projectName by remember { mutableStateOf("") }
-    var segments by remember { mutableStateOf(listOf<BuildSegment>()) }
-    var loaded by remember { mutableStateOf(false) }
+    var files by remember { mutableStateOf(listOf<SourceFile>()) }
+    var activeFileIndex by remember { mutableIntStateOf(0) }
+    var projectName by remember { mutableStateOf("Proyecto") }
+    var isBuilding by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
     val infiniteTransition = rememberInfiniteTransition(label = "build")
-    val pulse by infiniteTransition.animateFloat(
-        initialValue = 0.4f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1200), RepeatMode.Reverse), label = "pulse"
-    )
-    val scanLine by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(3000, easing = LinearEasing)), label = "scan"
-    )
-    val orbitAngle by infiniteTransition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing)), label = "orbit"
-    )
-    val breathe by infiniteTransition.animateFloat(
-        initialValue = 0.6f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse), label = "breathe"
+    val cursorBlink by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
+        label = "cursor"
     )
 
     LaunchedEffect(Unit) {
         vm.messages.collect { msg ->
-            if (msg.type == "build_progress" && msg.data != null) {
-                try {
-                    val json = org.json.JSONObject(msg.data.toString())
-                    projectName = json.optString("project", "Project")
-                    val arr = json.optJSONArray("segments")
-                    if (arr != null) {
-                        val list = mutableListOf<BuildSegment>()
-                        for (i in 0 until arr.length()) {
-                            val obj = arr.getJSONObject(i)
-                            val statusName = obj.optString("status", "PENDING")
-                            list.add(BuildSegment(
-                                name = obj.getString("name"),
-                                platform = obj.optString("platform", "Android"),
-                                status = try { SegmentStatus.valueOf(statusName) } catch (_: Exception) { SegmentStatus.PENDING },
-                                progress = obj.optDouble("progress", 0.0).toFloat(),
-                                files = emptyList()
-                            ))
-                        }
-                        segments = list
+            when (msg.type) {
+                "chat_start" -> {
+                    isBuilding = true
+                    if (files.isEmpty()) {
+                        files = listOf(SourceFile("Main.kt", "kotlin", emptyList()))
+                        activeFileIndex = 0
                     }
-                    loaded = true
-                } catch (_: Exception) {}
+                }
+                "chat_chunk" -> {
+                    val text = msg.data?.toString() ?: ""
+                    if (text.isNotBlank()) {
+                        val current = files.toMutableList()
+                        if (current.isNotEmpty()) {
+                            val idx = activeFileIndex.coerceIn(0, current.size - 1)
+                            val file = current[idx]
+                            val newLines = text.split("\n").filter { it.isNotBlank() }
+                            current[idx] = file.copy(lines = file.lines + newLines)
+                            files = current
+                        }
+                    }
+                }
+                "chat_end" -> {
+                    isBuilding = false
+                    val current = files.toMutableList()
+                    if (current.isNotEmpty()) {
+                        val idx = activeFileIndex.coerceIn(0, current.size - 1)
+                        current[idx] = current[idx].copy(isComplete = true)
+                        files = current
+                    }
+                }
+                "build_progress" -> {
+                    try {
+                        val json = org.json.JSONObject(msg.data.toString())
+                        projectName = json.optString("project", "Proyecto")
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        val primaryColor = MaterialTheme.colorScheme.primary
-        val secondaryColor = MaterialTheme.colorScheme.secondary
-        val tertiaryColor = MaterialTheme.colorScheme.tertiary
+    LaunchedEffect(files.size) {
+        if (files.isNotEmpty()) {
+            kotlinx.coroutines.delay(100)
+            listState.animateScrollToItem(files.flatMap { it.lines }.size.coerceAtLeast(0))
+        }
+    }
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
-            val cx = w / 2
-            val cy = h / 2
-
-            for (i in 0..20) {
-                val x = w * i / 20
-                drawLine(Color.White.copy(alpha = 0.02f), Offset(x, 0f), Offset(x, h), 0.5f)
-                val y = h * i / 20
-                drawLine(Color.White.copy(alpha = 0.02f), Offset(0f, y), Offset(w, y), 0.5f)
-            }
-
-            drawLine(
-                color = primaryColor.copy(alpha = 0.08f),
-                start = Offset(0f, h * scanLine),
-                end = Offset(w, h * scanLine),
-                strokeWidth = 1f
-            )
-
-            if (segments.isNotEmpty()) {
-                val centerX = cx
-                val centerY = cy
-                val nodePositions = mutableListOf<Offset>()
-                val colors = listOf(primaryColor, secondaryColor, tertiaryColor)
-
-                segments.forEachIndexed { idx, seg ->
-                    val angle = (2.0 * PI * idx / segments.size + orbitAngle * PI / 180).toFloat()
-                    val radius = w * 0.18f
-                    val px = centerX + cos(angle) * radius
-                    val py = centerY + sin(angle) * radius * 0.6f
-                    nodePositions.add(Offset(px, py))
-
-                    val nodeColor = colors[idx % colors.size]
-                    val alpha = when (seg.status) {
-                        SegmentStatus.COMPLETE -> 0.4f + pulse * 0.3f
-                        SegmentStatus.BUILDING -> 0.2f + pulse * 0.5f
-                        SegmentStatus.ERROR -> 0.3f
-                        SegmentStatus.PENDING -> 0.1f
-                    }
-
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(nodeColor.copy(alpha = 0.25f * alpha), Color.Transparent),
-                            center = Offset(px, py), radius = 35f
-                        ),
-                        radius = 35f, center = Offset(px, py)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(EditorBg)
+    ) {
+        Surface(
+            color = Color(0xFF161B22),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Filled.Build,
+                    null,
+                    tint = EditorPurple,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        "Live Code Writer",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC9D1D9)
                     )
-                    drawCircle(color = nodeColor.copy(alpha = alpha * 0.6f), radius = 14f, center = Offset(px, py), style = Stroke(2f))
-                    drawCircle(color = nodeColor.copy(alpha = alpha), radius = 5f, center = Offset(px, py))
-
-                    if (seg.status == SegmentStatus.BUILDING) {
-                        val arcAngle = 360f * seg.progress
-                        drawArc(
-                            color = nodeColor.copy(alpha = 0.5f),
-                            startAngle = 0f,
-                            sweepAngle = arcAngle,
-                            useCenter = false,
-                            topLeft = Offset(px - 18f, py - 18f),
-                            size = androidx.compose.ui.geometry.Size(36f, 36f),
-                            style = Stroke(2.5f)
-                        )
+                    Text(
+                        projectName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = EditorCyan,
+                        fontFamily = CodeFont,
+                        fontSize = 10.sp
+                    )
+                }
+                if (isBuilding) {
+                    Surface(
+                        shape = CircleShape,
+                        color = EditorGreen.copy(alpha = 0.15f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(EditorGreen)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Escribiendo", style = MaterialTheme.typography.labelSmall, color = EditorGreen)
+                        }
+                    }
+                } else if (files.isNotEmpty() && files.all { it.isComplete }) {
+                    Surface(
+                        shape = CircleShape,
+                        color = EditorGreen.copy(alpha = 0.15f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Filled.CheckCircle, null, modifier = Modifier.size(12.dp), tint = EditorGreen)
+                            Spacer(Modifier.width(4.dp))
+                            Text("Completado", style = MaterialTheme.typography.labelSmall, color = EditorGreen)
+                        }
                     }
                 }
+            }
+        }
 
-                for (i in nodePositions.indices) {
-                    for (j in i + 1 until nodePositions.size) {
-                        val a = nodePositions[i]
-                        val b = nodePositions[j]
-                        val dx = a.x - b.x
-                        val dy = a.y - b.y
-                        val dist = sqrt(dx * dx + dy * dy)
-                        val maxDist = w * 0.3f
-                        if (dist < maxDist) {
-                            val edgeAlpha = (1f - dist / maxDist) * 0.12f * pulse
-                            drawLine(
-                                brush = Brush.linearGradient(
-                                    colors = listOf(
-                                        colors[i % colors.size].copy(alpha = edgeAlpha),
-                                        colors[j % colors.size].copy(alpha = edgeAlpha * 0.5f)
-                                    )
-                                ),
-                                start = a, end = b, strokeWidth = 1f
+        if (files.size > 1) {
+            Surface(color = Color(0xFF161B22)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    files.forEachIndexed { index, file ->
+                        val isActive = index == activeFileIndex
+                        Surface(
+                            onClick = { activeFileIndex = index },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isActive) Color(0xFF21262D) else Color.Transparent
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    when (file.language) {
+                                        "kotlin" -> Icons.Filled.Code
+                                        "python" -> Icons.Filled.DataObject
+                                        "xml" -> Icons.Filled.Description
+                                        else -> Icons.Filled.InsertDriveFile
+                                    },
+                                    null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = if (isActive) EditorBlue else EditorCyan
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    file.name,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontFamily = CodeFont,
+                                    fontSize = 10.sp,
+                                    color = if (isActive) Color(0xFFC9D1D9) else EditorCyan
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (files.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        Icons.Filled.Code,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = EditorPurple.copy(alpha = 0.5f)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Live Code Writer",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC9D1D9)
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "El código fuente aparecerá aquí línea por línea",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = EditorLineNum
+                    )
+                }
+            }
+        } else {
+            val activeFile = files.getOrNull(activeFileIndex) ?: files.first()
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 0.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                items(activeFile.lines, key = { "${activeFile.name}_$it" }) { line ->
+                    EditorCodeLine(
+                        content = line,
+                        lineNum = activeFile.lines.indexOf(line) + 1,
+                        showCursor = isBuilding && line == activeFile.lines.lastOrNull()
+                    )
+                }
+
+                if (isBuilding) {
+                    item {
+                        Row(
+                            modifier = Modifier.padding(start = 48.dp, top = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(2.dp)
+                                    .height(14.dp)
+                                    .background(EditorCursor.copy(alpha = cursorBlink))
                             )
                         }
                     }
                 }
-            } else {
-                for (i in 0..5) {
-                    val angle = orbitAngle * PI / 180 + i * PI / 3
-                    val r = w * 0.2f + i * 30f
-                    val px = cx + cos(angle).toFloat() * r * 0.3f
-                    val py = cy + sin(angle).toFloat() * r * 0.2f
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(primaryColor.copy(alpha = 0.04f * breathe), Color.Transparent),
-                            center = Offset(px, py), radius = 40f
-                        ),
-                        radius = 40f, center = Offset(px, py)
-                    )
-                }
-                drawCircle(
-                    brush = Brush.radialGradient(
-                        colors = listOf(primaryColor.copy(alpha = 0.06f * breathe), Color.Transparent),
-                        center = Offset(cx, cy), radius = 60f
-                    ),
-                    radius = 60f, center = Offset(cx, cy)
-                )
             }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(12.dp)
+        Surface(
+            color = Color(0xFF161B22)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Build Visualizer", style = MaterialTheme.typography.headlineSmall)
-                    if (projectName.isNotEmpty()) {
-                        Text(projectName, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-                    }
-                    Text("Architecture flow & construction progress", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                    Canvas(modifier = Modifier.fillMaxSize()) {
-                        val orbCx = size.width / 2
-                        val orbCy = size.height / 2
-                        val orbR = size.width / 2 - 4f
-                        drawCircle(color = primaryColor.copy(alpha = 0.15f * breathe), radius = orbR, style = Stroke(1.5f))
-                        val dotX = orbCx + cos(Math.toRadians(orbitAngle.toDouble())).toFloat() * orbR * 0.7f
-                        val dotY = orbCy + sin(Math.toRadians(orbitAngle.toDouble())).toFloat() * orbR * 0.7f
-                        drawCircle(color = primaryColor, radius = 3f, center = Offset(dotX, dotY))
-                        drawCircle(color = primaryColor.copy(alpha = 0.7f), radius = 3f, center = Offset(orbCx, orbCy))
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(12.dp))
-
-            if (!loaded) {
-                Column(
-                    modifier = Modifier.fillMaxWidth().padding(top = 80.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Filled.AccountTree, null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f), modifier = Modifier.size(56.dp)
-                    )
-                    Spacer(Modifier.height(16.dp))
-                    Text("No active build", style = MaterialTheme.typography.titleMedium)
-                    Spacer(Modifier.height(8.dp))
+                Text(
+                    "${files.flatMap { it.lines }.size} líneas",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontFamily = CodeFont,
+                    fontSize = 10.sp,
+                    color = EditorLineNum
+                )
+                Spacer(Modifier.weight(1f))
+                if (activeFileIndex < files.size) {
                     Text(
-                        "Architecture flow diagrams appear here as MiMo constructs your app",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 24.dp)
+                        files[activeFileIndex].language.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = CodeFont,
+                        fontSize = 10.sp,
+                        color = EditorCyan
                     )
-                }
-            } else {
-                segments.forEach { seg ->
-                    SegmentCard(seg, pulse)
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        "UTF-8",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = CodeFont,
+                        fontSize = 10.sp,
+                        color = EditorLineNum
+                    )
                 }
             }
         }
@@ -264,82 +332,102 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
 }
 
 @Composable
-fun SegmentCard(seg: BuildSegment, pulse: Float) {
-    val color = when (seg.status) {
-        SegmentStatus.COMPLETE -> MaterialTheme.colorScheme.primary
-        SegmentStatus.BUILDING -> MaterialTheme.colorScheme.tertiary
-        SegmentStatus.ERROR -> MaterialTheme.colorScheme.error
-        SegmentStatus.PENDING -> MaterialTheme.colorScheme.outline
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        shape = RoundedCornerShape(10.dp)
+private fun EditorCodeLine(content: String, lineNum: Int, showCursor: Boolean) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.Transparent)
+            .padding(horizontal = 0.dp, vertical = 0.dp),
+        verticalAlignment = Alignment.Top
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    modifier = Modifier.size(22.dp),
-                    shape = CircleShape,
-                    color = color.copy(alpha = if (seg.status == SegmentStatus.BUILDING) pulse * 0.2f else 0.12f)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        when (seg.status) {
-                            SegmentStatus.COMPLETE -> Icon(
-                                Icons.Filled.CheckCircle, null,
-                                tint = color, modifier = Modifier.size(14.dp)
-                            )
-                            SegmentStatus.BUILDING -> CircularProgressIndicator(
-                                modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp, color = color
-                            )
-                            SegmentStatus.ERROR -> Icon(
-                                Icons.Filled.Error, null,
-                                tint = color, modifier = Modifier.size(14.dp)
-                            )
-                            SegmentStatus.PENDING -> Box(
-                                modifier = Modifier.size(5.dp).clip(CircleShape).background(color.copy(alpha = 0.3f))
-                            )
-                        }
+        Box(
+            modifier = Modifier
+                .width(48.dp)
+                .background(Color(0xFF0D1117))
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            contentAlignment = Alignment.CenterEnd
+        ) {
+            Text(
+                text = "$lineNum",
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = CodeFont,
+                fontSize = 12.sp,
+                color = EditorLineNum
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 12.dp, vertical = 2.dp)
+        ) {
+            Text(
+                text = highlightCode(content),
+                style = MaterialTheme.typography.bodySmall,
+                fontFamily = CodeFont,
+                fontSize = 13.sp,
+                color = Color(0xFFC9D1D9),
+                lineHeight = 18.sp
+            )
+        }
+    }
+}
+
+private fun highlightCode(code: String): androidx.compose.ui.text.AnnotatedString {
+    return buildAnnotatedString {
+        var i = 0
+        while (i < code.length) {
+            when {
+                code.substring(i).startsWith("//") -> {
+                    withStyle(SpanStyle(color = EditorLineNum)) { append(code.substring(i)) }
+                    i = code.length
+                }
+                code.substring(i).startsWith("/*") -> {
+                    withStyle(SpanStyle(color = EditorLineNum)) { append(code.substring(i)) }
+                    i = code.length
+                }
+                code.substring(i).startsWith("\"") || code.substring(i).startsWith("'") -> {
+                    val quote = code[i]
+                    val end = code.indexOf(quote, i + 1).let { if (it == -1) code.length else it + 1 }
+                    withStyle(SpanStyle(color = EditorGreen)) { append(code.substring(i, end)) }
+                    i = end
+                }
+                code.substring(i).startsWith("fun ") || code.substring(i).startsWith("val ") ||
+                code.substring(i).startsWith("var ") || code.substring(i).startsWith("class ") ||
+                code.substring(i).startsWith("import ") || code.substring(i).startsWith("return ") ||
+                code.substring(i).startsWith("if ") || code.substring(i).startsWith("else ") ||
+                code.substring(i).startsWith("for ") || code.substring(i).startsWith("while ") ||
+                code.substring(i).startsWith("when ") || code.substring(i).startsWith("object ") ||
+                code.substring(i).startsWith("interface ") || code.substring(i).startsWith("data ") ||
+                code.substring(i).startsWith("sealed ") || code.substring(i).startsWith("override ") ||
+                code.substring(i).startsWith("private ") || code.substring(i).startsWith("public ") ||
+                code.substring(i).startsWith("internal ") || code.substring(i).startsWith("protected ") ||
+                code.substring(i).startsWith("suspend ") || code.substring(i).startsWith("async ") ||
+                code.substring(i).startsWith("await ") || code.substring(i).startsWith("try ") ||
+                code.substring(i).startsWith("catch ") || code.substring(i).startsWith("throw ") -> {
+                    val keywords = listOf("fun ", "val ", "var ", "class ", "import ", "return ", "if ", "else ", "for ", "while ", "when ", "object ", "interface ", "data ", "sealed ", "override ", "private ", "public ", "internal ", "protected ", "suspend ", "async ", "await ", "try ", "catch ", "throw ", "in ", "is ", "as ", "true", "false", "null", "this", "super")
+                    val keyword = keywords.find { code.substring(i).startsWith(it) }
+                    if (keyword != null) {
+                        withStyle(SpanStyle(color = EditorPurple)) { append(keyword) }
+                        i += keyword.length
+                    } else {
+                        withStyle(SpanStyle(color = EditorBlue)) { append(code[i]) }
+                        i++
                     }
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(seg.name, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
-                    Text(seg.platform, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                code[i].isDigit() -> {
+                    val end = (i until code.length).firstOrNull { !code[it].isDigit() && code[it] != '.' } ?: code.length
+                    withStyle(SpanStyle(color = EditorOrange)) { append(code.substring(i, end)) }
+                    i = end
                 }
-                Text(
-                    when (seg.status) {
-                        SegmentStatus.COMPLETE -> "Done"
-                        SegmentStatus.BUILDING -> "${(seg.progress * 100).toInt()}%"
-                        SegmentStatus.ERROR -> "Error"
-                        SegmentStatus.PENDING -> "Queue"
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = color,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            if (seg.status == SegmentStatus.BUILDING) {
-                Spacer(Modifier.height(8.dp))
-                LinearProgressIndicator(
-                    progress = { seg.progress },
-                    modifier = Modifier.fillMaxWidth().height(3.dp).clip(RoundedCornerShape(2.dp)),
-                    color = color,
-                    trackColor = color.copy(alpha = 0.1f)
-                )
-            }
-
-            if (seg.files.isNotEmpty()) {
-                Spacer(Modifier.height(6.dp))
-                seg.files.take(5).forEach { file ->
-                    Text(
-                        file,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        maxLines = 1
-                    )
+                code.substring(i).startsWith("@") -> {
+                    val end = (i + 1 until code.length).firstOrNull { !code[it].isLetterOrDigit() && code[it] != '_' } ?: code.length
+                    withStyle(SpanStyle(color = EditorYellow)) { append(code.substring(i, end)) }
+                    i = end
+                }
+                else -> {
+                    append(code[i])
+                    i++
                 }
             }
         }

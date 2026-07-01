@@ -20,11 +20,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mimo.mobile.network.ConnectionState
@@ -33,6 +36,14 @@ import com.mimo.mobile.ui.components.MatplotlibBackground
 import com.mimo.mobile.viewmodel.ChatInstance
 import com.mimo.mobile.viewmodel.MiMoViewModel
 import kotlinx.coroutines.launch
+
+private val CodeFont = FontFamily.Monospace
+private val CodeBackground = Color(0xFF1E1E2E)
+private val CodeKeyword = Color(0xFFCBA6F7)
+private val CodeString = Color(0xFFA6E3A1)
+private val CodeComment = Color(0xFF6C7086)
+private val CodeFunction = Color(0xFF89B4FA)
+private val CodeNumber = Color(0xFFFAB387)
 
 @Composable
 fun ChatScreen(vm: MiMoViewModel) {
@@ -77,406 +88,418 @@ fun ChatScreen(vm: MiMoViewModel) {
         Column(modifier = Modifier.fillMaxSize()) {
             if (state.connectionState != ConnectionState.CONNECTED) {
                 ConnectionBanner(state.connectionState)
-        }
+            }
 
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    instances.forEach { inst ->
+                        val isActive = inst.id == activeId
+                        FilterChip(
+                            selected = isActive,
+                            onClick = { vm.switchInstance(inst.id) },
+                            label = {
+                                Text(
+                                    inst.name,
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
+                            },
+                            modifier = Modifier.padding(horizontal = 2.dp),
+                            leadingIcon = if (isActive) {
+                                { Icon(Icons.Filled.Circle, null, modifier = Modifier.size(6.dp), tint = MaterialTheme.colorScheme.primary) }
+                            } else null
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    IconButton(onClick = { showInstanceManager = !showInstanceManager }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Filled.Add, "New instance", modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp),
+                contentPadding = PaddingValues(vertical = 8.dp)
+            ) {
+                if (activeInstance?.messages.isNullOrEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 64.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Icon(
+                                    Icons.Filled.SmartToy,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(48.dp),
+                                    tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    "MiMo Mobile",
+                                    style = MaterialTheme.typography.titleLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "Escribe un mensaje para comenzar",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                items(activeInstance?.messages ?: emptyList(), key = { it.id }) { msg ->
+                    ChatBubble(
+                        message = msg,
+                        isUser = msg.role == "user"
+                    )
+                }
+
+                if (isProcessing) {
+                    item {
+                        TypingIndicator()
+                    }
+                }
+            }
+
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Escribe tu mensaje...", fontSize = 14.sp) },
+                        maxLines = 4,
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        ),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                        keyboardActions = KeyboardActions(onSend = {
+                            if (inputText.isNotBlank() && isReady) {
+                                vm.sendChat(inputText.trim())
+                                vm.incrementMessageCount()
+                                inputText = ""
+                            }
+                        })
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    FilledIconButton(
+                        onClick = {
+                            if (inputText.isNotBlank() && isReady) {
+                                vm.sendChat(inputText.trim())
+                                vm.incrementMessageCount()
+                                inputText = ""
+                            }
+                        },
+                        enabled = inputText.isNotBlank() && isReady,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.Send, "Send", modifier = Modifier.size(20.dp))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatBubble(message: com.mimo.mobile.viewmodel.ChatMsg, isUser: Boolean) {
+    val bubbleColor = if (isUser) {
+        MaterialTheme.colorScheme.primary
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
+    val textColor = if (isUser) {
+        MaterialTheme.colorScheme.onPrimary
+    } else {
+        MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val alignment = if (isUser) Alignment.CenterEnd else Alignment.CenterStart
+    val shape = if (isUser) {
+        RoundedCornerShape(16.dp, 16.dp, 4.dp, 16.dp)
+    } else {
+        RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        contentAlignment = alignment
+    ) {
         Surface(
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 2.dp,
-            modifier = Modifier.fillMaxWidth()
+            shape = shape,
+            color = bubbleColor,
+            modifier = Modifier.widthIn(max = 320.dp)
         ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                if (!isUser) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Filled.SmartToy,
+                            contentDescription = null,
+                            modifier = Modifier.size(14.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "MiMo",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+
+                RenderMessageContent(message.content, textColor)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RenderMessageContent(content: String, baseColor: Color) {
+    val codeBlockRegex = Regex("```(\\w+)?\\n(.*?)```", RegexOption.DOT_MATCHES_ALL)
+    val parts = mutableListOf<Pair<Boolean, String>>()
+    var lastIndex = 0
+
+    codeBlockRegex.findAll(content).forEach { match ->
+        if (match.range.first > lastIndex) {
+            parts.add(Pair(false, content.substring(lastIndex, match.range.first)))
+        }
+        parts.add(Pair(true, match.value))
+        lastIndex = match.range.last + 1
+    }
+    if (lastIndex < content.length) {
+        parts.add(Pair(false, content.substring(lastIndex)))
+    }
+
+    if (parts.isEmpty()) {
+        parts.add(Pair(false, content))
+    }
+
+    parts.forEach { (isCode, text) ->
+        if (isCode) {
+            val lang = Regex("```(\\w+)").find(text)?.groupValues?.get(1) ?: ""
+            val code = text.removePrefix("```$lang\n").removeSuffix("```").trim()
+            CodeBlock(code = code, language = lang)
+        } else {
+            Text(
+                text = text.trim(),
+                color = baseColor,
+                style = MaterialTheme.typography.bodyMedium,
+                lineHeight = 20.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun CodeBlock(code: String, language: String) {
+    var expanded by remember { mutableStateOf(true) }
+    var copied by remember { mutableStateOf(false) }
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = CodeBackground,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp)
+    ) {
+        Column {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                instances.forEach { inst ->
-                    val isActive = inst.id == activeId
-                    FilterChip(
-                        selected = isActive,
-                        onClick = { vm.switchInstance(inst.id) },
-                        label = {
-                            Text(
-                                inst.name,
-                                fontSize = 12.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        trailingIcon = if (inst.isProcessing) {
-                            { CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 1.5.dp) }
-                        } else if (inst.id != "default") {
-                            {
-                                IconButton(onClick = { vm.removeInstance(inst.id) }, modifier = Modifier.size(18.dp)) {
-                                    Icon(Icons.Filled.Close, null, modifier = Modifier.size(12.dp))
-                                }
-                            }
-                        } else null,
-                        modifier = Modifier.padding(horizontal = 2.dp)
+                Text(
+                    text = language.ifEmpty { "code" },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = CodeComment,
+                    fontFamily = CodeFont,
+                    fontSize = 10.sp
+                )
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(20.dp)) {
+                    Icon(
+                        if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = CodeComment
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                IconButton(onClick = { showInstanceManager = !showInstanceManager }, modifier = Modifier.size(32.dp)) {
-                    Icon(Icons.Filled.Add, "Add instance", modifier = Modifier.size(18.dp))
-                }
             }
-        }
 
-        if (showInstanceManager) {
-            Card(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text("Manage Instances", style = MaterialTheme.typography.labelMedium)
-                    Spacer(Modifier.height(8.dp))
-                    instances.forEach { inst ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(inst.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                            Text("${inst.messages.size} msgs", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            if (inst.id != "default") {
-                                IconButton(onClick = { vm.removeInstance(inst.id) }, modifier = Modifier.size(24.dp)) {
-                                    Icon(Icons.Filled.Close, null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
+            AnimatedVisibility(visible = expanded) {
+                Column(modifier = Modifier.padding(start = 12.dp, end = 12.dp, bottom = 12.dp)) {
+                    code.lines().forEachIndexed { index, line ->
+                        Row {
+                            Text(
+                                text = "${index + 1}",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = CodeFont,
+                                fontSize = 11.sp,
+                                color = CodeComment.copy(alpha = 0.5f),
+                                modifier = Modifier.width(24.dp)
+                            )
+                            Text(
+                                text = highlightSyntax(line),
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = CodeFont,
+                                fontSize = 11.sp,
+                                color = Color(0xFFCDD6F4),
+                                lineHeight = 16.sp
+                            )
                         }
                     }
-                    Spacer(Modifier.height(4.dp))
-                    TextButton(
-                        onClick = { vm.addInstance("Instance ${instances.size + 1}"); showInstanceManager = false },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Filled.Add, null, modifier = Modifier.size(14.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Add Instance", style = MaterialTheme.typography.labelMedium)
-                    }
                 }
             }
-        }
-
-        LazyColumn(
-            state = listState,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(vertical = 12.dp)
-        ) {
-            if (activeInstance == null || activeInstance.messages.isEmpty()) {
-                item { EmptyChatState() }
-            }
-            activeInstance?.messages?.forEach { msg ->
-                item(key = msg.id) {
-                    ChatBubble(msg, vm)
-                }
-            }
-        }
-
-        ChatInputBar(
-            value = inputText,
-            onValueChange = { inputText = it },
-            onSend = {
-                if (inputText.isNotBlank() && isReady) {
-                    val instId = activeId
-                    vm.sendChat(inputText.trim(), instId)
-                    inputText = ""
-                }
-            },
-            isProcessing = activeInstance?.isProcessing == true,
-            enabled = isReady
-        )
         }
     }
 }
 
 @Composable
-fun ConnectionBanner(state: ConnectionState) {
-    val (color, text, icon) = when (state) {
-        ConnectionState.CONNECTING -> Triple(MaterialTheme.colorScheme.tertiary, "Connecting to server...", Icons.Filled.Sync)
-        ConnectionState.ERROR -> Triple(MaterialTheme.colorScheme.error, "Connection failed. Check Settings.", Icons.Filled.ErrorOutline)
-        ConnectionState.DISCONNECTED -> Triple(MaterialTheme.colorScheme.onSurfaceVariant, "Offline. Go to Settings to connect.", Icons.Filled.CloudOff)
-        else -> return
-    }
+private fun TypingIndicator() {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600), RepeatMode.Reverse),
+        label = "alpha"
+    )
 
-    Surface(
-        color = color.copy(alpha = 0.12f),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(icon, null, tint = color, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(10.dp))
-            Text(text, color = color, style = MaterialTheme.typography.bodyMedium)
-        }
-    }
-}
-
-@Composable
-fun EmptyChatState() {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 80.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(vertical = 4.dp),
+        contentAlignment = Alignment.CenterStart
     ) {
-        Icon(
-            Icons.Filled.ChatBubbleOutline,
-            contentDescription = null,
-            modifier = Modifier.size(72.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
-        )
-        Spacer(Modifier.height(24.dp))
-        Text(
-            "MiMo Mobile",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "Your AI coding assistant on the go",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Connected to your PC, accessible from anywhere",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.outline,
-            textAlign = TextAlign.Center
-        )
-        Spacer(Modifier.height(32.dp))
-        QuickActionChips()
-    }
-}
-
-@Composable
-fun QuickActionChips() {
-    val actions = listOf(
-        "Build an app" to Icons.Filled.PhoneAndroid,
-        "Debug code" to Icons.Filled.BugReport,
-        "Write tests" to Icons.Filled.Science,
-        "Explain code" to Icons.Filled.Lightbulb
-    )
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("Try asking:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(12.dp))
-        actions.chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                row.forEach { (action, icon) ->
-                    AssistChip(
-                        onClick = { },
-                        label = { Text(action, style = MaterialTheme.typography.labelSmall) },
-                        leadingIcon = { Icon(icon, null, modifier = Modifier.size(16.dp)) }
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
-    }
-}
-
-@Composable
-fun ChatBubble(msg: com.mimo.mobile.viewmodel.ChatMsg, vm: MiMoViewModel) {
-    val isUser = msg.role == "user"
-    val isError = msg.role == "error"
-    val widthDp = rememberWindowWidthDp()
-    val isWide = widthDp >= 600
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
-        if (!isUser) {
-            Surface(
-                modifier = Modifier.size(24.dp),
-                shape = CircleShape,
-                color = if (isError) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        "M",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = if (isError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-            Spacer(Modifier.width(8.dp))
-        }
-
-        Column(modifier = Modifier.widthIn(max = if (isWide) 500.dp else 300.dp)) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(
-                    topStart = if (isUser) 14.dp else 4.dp,
-                    topEnd = if (isUser) 4.dp else 14.dp,
-                    bottomStart = 14.dp,
-                    bottomEnd = 14.dp
-                ),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (isUser) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                    else if (isError) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-                    else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                )
-            ) {
-                if (msg.isStreaming) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        TypingIndicator()
-                        Spacer(Modifier.width(8.dp))
-                        Text("Thinking...", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    }
-                }
-                if (msg.content.isNotBlank()) {
-                    Text(
-                        msg.content.trim(),
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isUser) MaterialTheme.colorScheme.onPrimaryContainer
-                        else if (isError) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        lineHeight = 20.sp
-                    )
-                }
-            }
-
-            if (!isUser && !msg.isStreaming && msg.content.isNotBlank()) {
-                Spacer(Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    M3ActionChip("Copy", Icons.Filled.ContentCopy) { }
-                    M3ActionChip("Explain", Icons.Filled.Lightbulb) { }
-                    M3ActionChip("Run", Icons.Filled.PlayArrow) {
-                        val code = msg.content.trim()
-                        if (code.isNotBlank()) {
-                            vm.sendExecute(code)
-                        }
-                    }
-                }
-            }
-        }
-
-        if (isUser) {
-            Spacer(Modifier.width(8.dp))
-            Surface(
-                modifier = Modifier.size(24.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.15f)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text("U", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onTertiaryContainer)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun M3ActionChip(label: String, icon: ImageVector, onClick: () -> Unit) {
-    SuggestionChip(
-        onClick = onClick,
-        label = { Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.outline) },
-        icon = { Icon(icon, null, modifier = Modifier.size(12.dp), tint = MaterialTheme.colorScheme.outline) }
-    )
-}
-
-@Composable
-fun TypingIndicator() {
-    Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
-        repeat(3) { index ->
-            val infiniteTransition = rememberInfiniteTransition(label = "dot_$index")
-            val offsetY by infiniteTransition.animateFloat(
-                initialValue = 0f, targetValue = -4f,
-                animationSpec = infiniteRepeatable(
-                    tween(500, delayMillis = index * 120), RepeatMode.Reverse
-                ), label = "dot_$index"
-            )
-            Box(
-                modifier = Modifier
-                    .offset(y = offsetY.dp)
-                    .size(4.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
-            )
-        }
-    }
-}
-
-@Composable
-fun ChatInputBar(
-    value: String,
-    onValueChange: (String) -> Unit,
-    onSend: () -> Unit,
-    isProcessing: Boolean,
-    enabled: Boolean
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.background,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Box(
-            modifier = Modifier.fillMaxWidth(),
-            contentAlignment = Alignment.Center
+        Surface(
+            shape = RoundedCornerShape(16.dp, 16.dp, 16.dp, 4.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant
         ) {
             Row(
-                modifier = Modifier
-                    .widthIn(max = 600.dp)
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .clip(RoundedCornerShape(24.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-            TextField(
-                value = value,
-                onValueChange = onValueChange,
-                placeholder = {
-                    Text(
-                        if (enabled) "Ask MiMo..." else "Connecting...",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                },
-                modifier = Modifier.weight(1f),
-                colors = TextFieldDefaults.colors(
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                    focusedIndicatorColor = Color.Transparent,
-                    unfocusedIndicatorColor = Color.Transparent,
-                    cursorColor = MaterialTheme.colorScheme.primary,
-                    focusedTextColor = MaterialTheme.colorScheme.onSurface,
-                    unfocusedTextColor = MaterialTheme.colorScheme.onSurface
-                ),
-                textStyle = MaterialTheme.typography.bodyMedium,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(onSend = { onSend() }),
-                maxLines = 4,
-                enabled = enabled
-            )
-
-            FilledIconButton(
-                onClick = onSend,
-                enabled = value.isNotBlank() && !isProcessing && enabled,
-                modifier = Modifier.size(36.dp),
-                shape = CircleShape
-            ) {
-                if (isProcessing) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 1.5.dp
-                    )
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.Send, "Send", modifier = Modifier.size(16.dp))
-                }
+                Icon(
+                    Icons.Filled.SmartToy,
+                    contentDescription = null,
+                    modifier = Modifier.size(14.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                    "Pensando",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha)
+                )
             }
         }
+    }
+}
+
+@Composable
+private fun ConnectionBanner(state: ConnectionState) {
+    val color = when (state) {
+        ConnectionState.CONNECTING -> MaterialTheme.colorScheme.tertiaryContainer
+        ConnectionState.ERROR -> MaterialTheme.colorScheme.errorContainer
+        else -> MaterialTheme.colorScheme.surfaceVariant
+    }
+    val text = when (state) {
+        ConnectionState.CONNECTING -> "Conectando..."
+        ConnectionState.ERROR -> "Error de conexión"
+        else -> ""
+    }
+
+    if (text.isNotEmpty()) {
+        Surface(color = color, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelMedium,
+                textAlign = TextAlign.Center
+            )
+        }
+    }
+}
+
+private fun highlightSyntax(line: String): androidx.compose.ui.text.AnnotatedString {
+    return buildAnnotatedString {
+        var i = 0
+        while (i < line.length) {
+            when {
+                line.substring(i).startsWith("//") -> {
+                    withStyle(SpanStyle(color = CodeComment)) { append(line.substring(i)) }
+                    i = line.length
+                }
+                line.substring(i).startsWith("#") -> {
+                    withStyle(SpanStyle(color = CodeComment)) { append(line.substring(i)) }
+                    i = line.length
+                }
+                line.substring(i).startsWith("\"") || line.substring(i).startsWith("'") -> {
+                    val quote = line[i]
+                    val end = line.indexOf(quote, i + 1).let { if (it == -1) line.length else it + 1 }
+                    withStyle(SpanStyle(color = CodeString)) { append(line.substring(i, end)) }
+                    i = end
+                }
+                line.substring(i).startsWith("fun ") || line.substring(i).startsWith("def ") ||
+                line.substring(i).startsWith("class ") || line.substring(i).startsWith("import ") ||
+                line.substring(i).startsWith("val ") || line.substring(i).startsWith("var ") ||
+                line.substring(i).startsWith("return ") || line.substring(i).startsWith("if ") ||
+                line.substring(i).startsWith("else ") || line.substring(i).startsWith("for ") ||
+                line.substring(i).startsWith("while ") -> {
+                    val keywords = listOf("fun ", "def ", "class ", "import ", "val ", "var ", "return ", "if ", "else ", "for ", "while ", "in ", "is ", "as ", "try ", "catch ", "throw ", "when ", "object ", "interface ", "data ", "sealed ", "override ", "private ", "public ", "internal ", "protected ", "suspend ", "async ", "await ", "true ", "false ", "null ", "this ", "super ")
+                    val keyword = keywords.find { line.substring(i).startsWith(it) }
+                    if (keyword != null) {
+                        withStyle(SpanStyle(color = CodeKeyword)) { append(keyword.trimEnd()) }
+                        i += keyword.length
+                    } else {
+                        withStyle(SpanStyle(color = CodeFunction)) { append(line[i]) }
+                        i++
+                    }
+                }
+                line[i].isDigit() -> {
+                    val end = (i until line.length).firstOrNull { !line[it].isDigit() && line[it] != '.' } ?: line.length
+                    withStyle(SpanStyle(color = CodeNumber)) { append(line.substring(i, end)) }
+                    i = end
+                }
+                else -> {
+                    append(line[i])
+                    i++
+                }
+            }
         }
     }
 }
