@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -43,6 +44,96 @@ fun SettingsScreen(
         Spacer(Modifier.height(4.dp))
         Text("Configure your MiMo Code connection", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.height(20.dp))
+
+        // Theme Section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.Palette, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(12.dp))
+                    Text("Appearance", style = MaterialTheme.typography.titleMedium)
+                }
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Dark Theme Option
+                    Surface(
+                        onClick = { vm.updateToggle(MiMoViewModel.DARK_MODE_KEY, true) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (state.darkMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.surface,
+                        border = if (state.darkMode) ButtonDefaults.outlinedButtonBorder(enabled = true) else null
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF1A1A2E),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(60.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.DarkMode,
+                                        null,
+                                        tint = Color(0xFF6366F1),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text("Dark", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
+
+                    // Light Theme Option
+                    Surface(
+                        onClick = { vm.updateToggle(MiMoViewModel.DARK_MODE_KEY, false) },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (!state.darkMode) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.surface,
+                        border = if (!state.darkMode) ButtonDefaults.outlinedButtonBorder(enabled = true) else null
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFF5F5F5),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(60.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Filled.LightMode,
+                                        null,
+                                        tint = Color(0xFFF59E0B),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text("Light", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
 
         // Server Connection
         Card(
