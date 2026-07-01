@@ -62,10 +62,10 @@ class MainActivity : ComponentActivity() {
         }
 
         setContent {
-            MiMoTheme(userDarkMode = state.darkMode) {
-                val vm: MiMoViewModel = viewModel()
-                val state by vm.state.collectAsState()
+            val vm: MiMoViewModel = viewModel()
+            val state by vm.state.collectAsState()
 
+            MiMoTheme(userDarkMode = state.darkMode) {
                 LaunchedEffect(Unit) {
                     delay(1500L)
                     keepSplash = false

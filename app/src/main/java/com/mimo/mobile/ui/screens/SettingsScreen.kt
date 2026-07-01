@@ -7,12 +7,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.filled.* 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -185,6 +188,11 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
+        // Premium Plans
+        PremiumSection()
+
+        Spacer(Modifier.height(16.dp))
+
         // Setup Guide
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -340,5 +348,160 @@ fun StatusRow(label: String, value: String) {
     ) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+fun PremiumSection() {
+    val context = LocalContext.current
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Star, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(12.dp))
+                Text("Upgrade to Pro", style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Unlock all features and support development",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(16.dp))
+
+            // Free Plan
+            PlanCard(
+                name = "Free",
+                price = "$0",
+                period = "forever",
+                features = listOf("1 device", "Basic chat", "Community support"),
+                isCurrentPlan = true,
+                onClick = {}
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Pro Plan
+            PlanCard(
+                name = "Pro",
+                price = "$9.99",
+                period = "/month",
+                features = listOf("5 devices", "Remote desktop", "File manager", "Priority support"),
+                isRecommended = true,
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://buy.stripe.com/your-pro-link"))
+                    context.startActivity(intent)
+                }
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            // Team Plan
+            PlanCard(
+                name = "Team",
+                price = "$29.99",
+                period = "/month",
+                features = listOf("Unlimited devices", "All Pro features", "Dedicated support", "Early access"),
+                onClick = {
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://buy.stripe.com/your-team-link"))
+                    context.startActivity(intent)
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun PlanCard(
+    name: String,
+    price: String,
+    period: String,
+    features: List<String>,
+    isCurrentPlan: Boolean = false,
+    isRecommended: Boolean = false,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = if (isRecommended) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                else MaterialTheme.colorScheme.surface
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (isRecommended) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primary
+                        ) {
+                            Text(
+                                "RECOMMENDED",
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+                Row {
+                    Text(price, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text(period, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            features.forEach { feature ->
+                Row(
+                    modifier = Modifier.padding(vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.Check,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(feature, style = MaterialTheme.typography.bodySmall)
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            if (!isCurrentPlan) {
+                Button(
+                    onClick = onClick,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isRecommended) MaterialTheme.colorScheme.primary
+                                        else MaterialTheme.colorScheme.secondary
+                    )
+                ) {
+                    Text("Get $name", fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        "Current Plan",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
