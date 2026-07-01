@@ -1,28 +1,69 @@
 # MiMo Mobile
 
-Android app for remotely controlling MiMo Code CLI from your phone.
+**Controla tu PC desde el celular. Asistente AI siempre disponible.**
 
-## Features
+App Android nativa que conecta con MiMo Code CLI vía WebSocket. Chat, remote desktop, gestión de archivos y ejecución de comandos — todo desde tu teléfono.
 
-- **Chat** — Send prompts to MiMo Code and receive responses in real-time
-- **Build Visualizer** — Monitor project builds with animated pipeline visualization
-- **Remote Desktop** — View and control your PC screen from your phone
-- **Terminal** — Execute shell commands remotely
-- **File Browser** — Navigate and edit project files
-- **Device Manager** — Control connected Android devices via ADB
-- **Settings** — Configure server connection and preferences
+---
 
-## Architecture
+## Modelo de Negocio
+
+| Tier | Precio | Features |
+|------|--------|----------|
+| **Free** | $0 | 1 dispositivo, chat básico |
+| **Pro** | $9.99/mes | 5 dispositivos, remote desktop, file manager |
+| **Team** | $29.99/mes | Ilimitado, prioridad, soporte |
+| **Enterprise** | Custom | API, on-premise, SLA |
+
+---
+
+## Funcionalidades
+
+- **Chat con AI** — Envía prompts y recibe respuestas en tiempo real streaming
+- **Build Visualizer** — Pipeline animado de construcción de proyectos
+- **Remote Desktop** — Vista y control del escritorio del PC desde el celular
+- **File Browser** — Navega y edita archivos del proyecto
+- **Terminal** — Ejecuta comandos shell remotamente
+- **Device Manager** — Controla dispositivos Android conectados vía ADB
+- **Settings** — Configuración de servidor y preferencias
+
+---
+
+## Arquitectura
 
 ```
-Android App (Kotlin/Compose)
-    ↕ WebSocket (port 8765)
-Python Server (asyncio.Protocol)
-    ↕ Subprocess
-MiMo Code CLI
+┌─────────────────────────────────┐
+│    MiMo Mobile (Android)        │
+│    Kotlin + Jetpack Compose     │
+└───────────┬─────────────────────┘
+            │ WebSocket (8765)
+┌───────────▼─────────────────────┐
+│    MiMo Server (Python)         │
+│    asyncio.Protocol, stdlib     │
+└───────────┬─────────────────────┘
+            │ Subprocess
+┌───────────▼─────────────────────┐
+│    MiMo Code CLI                │
+└─────────────────────────────────┘
 ```
 
-## Setup
+---
+
+## Stack Técnico
+
+| Componente | Tecnología |
+|------------|------------|
+| Lenguaje | Kotlin |
+| UI | Jetpack Compose + Material3 |
+| Arquitectura | MVVM |
+| WebSocket | Implementación raw TCP (sin OkHttp) |
+| Persistencia | DataStore Preferences |
+| Server | Python 3.13, cero dependencias externas |
+| Comunicación | WebSocket (asyncio.Protocol) |
+
+---
+
+## Instalación
 
 ### Server (PC)
 ```bash
@@ -31,16 +72,39 @@ python3 server.py
 ```
 
 ### App (Android)
-1. Install APK from `app/build/outputs/apk/debug/app-debug.apk`
-2. Enter your PC's IP address in Settings
-3. Connect with PIN: `MIMO2026`
+1. Instala el APK desde `app/build/outputs/apk/debug/app-debug.apk`
+2. Ingresa la IP de tu PC en Settings
+3. Conecta con PIN: `MIMO2026`
 
-## Tech Stack
+---
 
-- **Android**: Kotlin, Jetpack Compose, MVVM, DataStore
-- **Server**: Python 3.13, asyncio.Protocol, pure stdlib
-- **Communication**: WebSocket (custom implementation, no OkHttp)
+## Configuración del Server
 
-## License
+Variables de entorno (`.env`):
+```bash
+MIMO_CMD=~/.mimocode/bin/mimo    # Ruta al CLI
+MIMO_AUTH_PIN=MIMO2026           # PIN de autenticación
+MIMO_WORKSPACE=~                 # Directorio de trabajo
+MIMO_WS_PORT=8765                # Puerto WebSocket
+MIMO_HTTP_PORT=8080              # Puerto HTTP
+```
 
-MIT
+---
+
+## Requisitos
+
+- Android 8.0+ (API 26)
+- Python 3.10+
+- MiMo Code CLI instalado
+
+---
+
+## Contacto
+
+- **GitHub**: [@dixi3stdgdl-design](https://github.com/dixi3stdgdl-design)
+
+---
+
+## Licencia
+
+MIT License
