@@ -159,7 +159,7 @@ fun SettingsScreen(
                 OutlinedTextField(
                     value = port, onValueChange = onPortChange,
                     label = { Text("WebSocket Port") },
-                    placeholder = { Text("9123") },
+                    placeholder = { Text("8765") },
                     leadingIcon = { Icon(Icons.Filled.Lan, null) },
                     modifier = Modifier.fillMaxWidth(), singleLine = true
                 )
