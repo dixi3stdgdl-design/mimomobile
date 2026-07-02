@@ -23,6 +23,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    flavorDimensions += "channel"
+    productFlavors {
+        create("free") {
+            dimension = "channel"
+            applicationIdSuffix = ".free"
+            versionNameSuffix = "-free"
+            buildConfigField("String", "TIER", "\"free\"")
+        }
+        create("pro") {
+            dimension = "channel"
+            applicationIdSuffix = ".pro"
+            versionNameSuffix = "-pro"
+            buildConfigField("String", "TIER", "\"pro\"")
+        }
+    }
+
     signingConfigs {
         create("release") {
             storeFile = rootProject.file("app/${keyProperties.getProperty("storeFile", "release-keystore.jks")}")
