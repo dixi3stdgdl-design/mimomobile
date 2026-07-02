@@ -1,6 +1,13 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+val keyProperties = Properties().apply {
+    val file = rootProject.file("app/key.properties")
+    if (file.exists()) load(file.inputStream())
 }
 
 android {
@@ -16,12 +23,24 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            storeFile = rootProject.file("app/${keyProperties.getProperty("storeFile", "release-keystore.jks")}")
+            storePassword = keyProperties.getProperty("storePassword", "")
+            keyAlias = keyProperties.getProperty("keyAlias", "")
+            keyPassword = keyProperties.getProperty("keyPassword", "")
+        }
+    }
+
     buildTypes {
         release {
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             applicationIdSuffix = ".debug"

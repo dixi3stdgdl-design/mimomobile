@@ -29,16 +29,20 @@ jobs:
     - name: Decode keystore
       run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > app/release-keystore.jks
 
+    - name: Generate key.properties
+      run: |
+        cat > app/key.properties <<EOF
+        storePassword=${{ secrets.KEYSTORE_PASSWORD }}
+        keyPassword=${{ secrets.KEY_PASSWORD }}
+        keyAlias=${{ secrets.KEY_ALIAS }}
+        storeFile=release-keystore.jks
+        EOF
+
     - name: Build Debug APK
       run: ./gradlew assembleDebug
 
     - name: Build Release APK
       run: ./gradlew assembleRelease
-      env:
-        KEYSTORE_FILE: release-keystore.jks
-        KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
 
     - name: Upload Debug APK
       uses: actions/upload-artifact@v4
@@ -52,6 +56,6 @@ jobs:
         name: release-apk
         path: app/build/outputs/apk/release/app-release.apk
 
-    - name: Clean up keystore
+    - name: Clean up secrets
       if: always()
-      run: rm -f app/release-keystore.jks
+      run: rm -f app/release-keystore.jks app/key.properties
