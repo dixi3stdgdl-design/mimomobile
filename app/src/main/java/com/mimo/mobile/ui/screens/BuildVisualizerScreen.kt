@@ -9,7 +9,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -17,95 +20,80 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mimo.mobile.viewmodel.MiMoViewModel
 
-private val CodeFont = FontFamily.Monospace
 private val EditorBg = Color(0xFF0D1117)
-private val EditorLineNum = Color(0xFF484F58)
-private val EditorCursor = Color(0xFF58A6FF)
-private val EditorGreen = Color(0xFF7EE787)
-private val EditorBlue = Color(0xFF79C0FF)
-private val EditorPurple = Color(0xFFD2A8FF)
-private val EditorYellow = Color(0xFFE3B341)
-private val EditorRed = Color(0xFFFF7B72)
-private val EditorCyan = Color(0xFFA5D6FF)
-private val EditorOrange = Color(0xFFFFA657)
+private val WireframeColor = Color(0xFF30363D)
+private val WireframeAccent = Color(0xFF58A6FF)
+private val UICardBg = Color(0xFF161B22)
+private val UIBlue = Color(0xFF58A6FF)
+private val UIGreen = Color(0xFF7EE787)
+private val UIPurple = Color(0xFFD2A8FF)
 
-data class SourceFile(
-    val name: String,
-    val language: String,
-    val lines: List<String>,
-    val isComplete: Boolean = false
+data class VisualComponent(
+    val type: String,
+    val phase: String = "wireframe",
+    val delayMs: Long = 0
 )
 
 @Composable
 fun BuildVisualizerScreen(vm: MiMoViewModel) {
-    var files by remember { mutableStateOf(listOf<SourceFile>()) }
-    var activeFileIndex by remember { mutableIntStateOf(0) }
-    var projectName by remember { mutableStateOf("Proyecto") }
+    var inputText by remember { mutableStateOf("") }
+    var projectName by remember { mutableStateOf("Mi Proyecto") }
     var isBuilding by remember { mutableStateOf(false) }
+    var components by remember { mutableStateOf(listOf<VisualComponent>()) }
+    var currentPhase by remember { mutableStateOf("idle") }
     val listState = rememberLazyListState()
-    val infiniteTransition = rememberInfiniteTransition(label = "build")
-    val cursorBlink by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(500), RepeatMode.Reverse),
-        label = "cursor"
-    )
+    val state by vm.state.collectAsState()
+    val isReady = state.connectionState == com.mimo.mobile.network.ConnectionState.CONNECTED
 
     LaunchedEffect(Unit) {
         vm.messages.collect { msg ->
             when (msg.type) {
                 "chat_start" -> {
                     isBuilding = true
-                    if (files.isEmpty()) {
-                        files = listOf(SourceFile("Main.kt", "kotlin", emptyList()))
-                        activeFileIndex = 0
-                    }
-                }
-                "chat_chunk" -> {
-                    val text = msg.data?.toString() ?: ""
-                    if (text.isNotBlank()) {
-                        val current = files.toMutableList()
-                        if (current.isNotEmpty()) {
-                            val idx = activeFileIndex.coerceIn(0, current.size - 1)
-                            val file = current[idx]
-                            val newLines = text.split("\n").filter { it.isNotBlank() }
-                            current[idx] = file.copy(lines = file.lines + newLines)
-                            files = current
-                        }
-                    }
-                }
-                "chat_end" -> {
-                    isBuilding = false
-                    val current = files.toMutableList()
-                    if (current.isNotEmpty()) {
-                        val idx = activeFileIndex.coerceIn(0, current.size - 1)
-                        current[idx] = current[idx].copy(isComplete = true)
-                        files = current
-                    }
+                    currentPhase = "wireframe"
+                    components = emptyList()
                 }
                 "build_progress" -> {
                     try {
                         val json = org.json.JSONObject(msg.data.toString())
-                        projectName = json.optString("project", "Proyecto")
+                        projectName = json.optString("project", "Mi Proyecto")
+                        val phase = json.optString("phase", "wireframe")
+                        currentPhase = phase
+                        val comps = json.optJSONArray("components")
+                        if (comps != null) {
+                            val newComponents = mutableListOf<VisualComponent>()
+                            for (i in 0 until comps.length()) {
+                                val comp = comps.getJSONObject(i)
+                                newComponents.add(
+                                    VisualComponent(
+                                        type = comp.optString("type", "card"),
+                                        phase = phase,
+                                        delayMs = i * 200L
+                                    )
+                                )
+                            }
+                            components = newComponents
+                        }
                     } catch (_: Exception) {}
+                }
+                "chat_end" -> {
+                    isBuilding = false
+                    currentPhase = "complete"
                 }
             }
         }
     }
 
-    LaunchedEffect(files.size) {
-        if (files.isNotEmpty()) {
+    LaunchedEffect(components.size) {
+        if (components.isNotEmpty()) {
             kotlinx.coroutines.delay(100)
-            listState.animateScrollToItem(files.flatMap { it.lines }.size.coerceAtLeast(0))
+            listState.animateScrollToItem(components.size)
         }
     }
 
@@ -114,6 +102,7 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
             .fillMaxSize()
             .background(EditorBg)
     ) {
+        // Header
         Surface(
             color = Color(0xFF161B22),
             modifier = Modifier.fillMaxWidth()
@@ -125,13 +114,13 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
                 Icon(
                     Icons.Filled.Build,
                     null,
-                    tint = EditorPurple,
+                    tint = UIPurple,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(8.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Live Code Writer",
+                        "App Constructor",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFC9D1D9)
@@ -139,15 +128,14 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
                     Text(
                         projectName,
                         style = MaterialTheme.typography.labelSmall,
-                        color = EditorCyan,
-                        fontFamily = CodeFont,
+                        color = WireframeAccent,
                         fontSize = 10.sp
                     )
                 }
                 if (isBuilding) {
                     Surface(
                         shape = CircleShape,
-                        color = EditorGreen.copy(alpha = 0.15f)
+                        color = UIGreen.copy(alpha = 0.15f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -157,76 +145,32 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(EditorGreen)
+                                    .background(UIGreen)
                             )
                             Spacer(Modifier.width(6.dp))
-                            Text("Escribiendo", style = MaterialTheme.typography.labelSmall, color = EditorGreen)
+                            Text("Construyendo", style = MaterialTheme.typography.labelSmall, color = UIGreen)
                         }
                     }
-                } else if (files.isNotEmpty() && files.all { it.isComplete }) {
+                } else if (currentPhase == "complete") {
                     Surface(
                         shape = CircleShape,
-                        color = EditorGreen.copy(alpha = 0.15f)
+                        color = UIGreen.copy(alpha = 0.15f)
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.CheckCircle, null, modifier = Modifier.size(12.dp), tint = EditorGreen)
+                            Icon(Icons.Filled.CheckCircle, null, modifier = Modifier.size(12.dp), tint = UIGreen)
                             Spacer(Modifier.width(4.dp))
-                            Text("Completado", style = MaterialTheme.typography.labelSmall, color = EditorGreen)
+                            Text("Completado", style = MaterialTheme.typography.labelSmall, color = UIGreen)
                         }
                     }
                 }
             }
         }
 
-        if (files.size > 1) {
-            Surface(color = Color(0xFF161B22)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    files.forEachIndexed { index, file ->
-                        val isActive = index == activeFileIndex
-                        Surface(
-                            onClick = { activeFileIndex = index },
-                            shape = RoundedCornerShape(6.dp),
-                            color = if (isActive) Color(0xFF21262D) else Color.Transparent
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    when (file.language) {
-                                        "kotlin" -> Icons.Filled.Code
-                                        "python" -> Icons.Filled.DataObject
-                                        "xml" -> Icons.Filled.Description
-                                        else -> Icons.Filled.InsertDriveFile
-                                    },
-                                    null,
-                                    modifier = Modifier.size(12.dp),
-                                    tint = if (isActive) EditorBlue else EditorCyan
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    file.name,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontFamily = CodeFont,
-                                    fontSize = 10.sp,
-                                    color = if (isActive) Color(0xFFC9D1D9) else EditorCyan
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if (files.isEmpty()) {
+        // Visual Construction Canvas
+        if (components.isEmpty() && !isBuilding) {
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -235,96 +179,258 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
-                        Icons.Filled.Code,
+                        Icons.Filled.PhoneAndroid,
                         contentDescription = null,
-                        modifier = Modifier.size(48.dp),
-                        tint = EditorPurple.copy(alpha = 0.5f)
+                        modifier = Modifier.size(64.dp),
+                        tint = UIPurple.copy(alpha = 0.4f)
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(16.dp))
                     Text(
-                        "Live Code Writer",
-                        style = MaterialTheme.typography.titleMedium,
+                        "Constructor de Apps",
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                         color = Color(0xFFC9D1D9)
                     )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Describe tu app y observa como se construye",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFF484F58)
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "El código fuente aparecerá aquí línea por línea",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = EditorLineNum
+                        "Ej: \"Construye una app de venta de tecnologia\"",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = WireframeAccent.copy(alpha = 0.6f)
                     )
                 }
             }
         } else {
-            val activeFile = files.getOrNull(activeFileIndex) ?: files.first()
-
             LazyColumn(
                 state = listState,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .padding(horizontal = 0.dp),
-                contentPadding = PaddingValues(vertical = 8.dp)
+                    .padding(horizontal = 16.dp),
+                contentPadding = PaddingValues(vertical = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                items(activeFile.lines, key = { "${activeFile.name}_$it" }) { line ->
-                    EditorCodeLine(
-                        content = line,
-                        lineNum = activeFile.lines.indexOf(line) + 1,
-                        showCursor = isBuilding && line == activeFile.lines.lastOrNull()
-                    )
-                }
-
-                if (isBuilding) {
-                    item {
-                        Row(
-                            modifier = Modifier.padding(start = 48.dp, top = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .width(2.dp)
-                                    .height(14.dp)
-                                    .background(EditorCursor.copy(alpha = cursorBlink))
-                            )
+                items(components.size) { index ->
+                    val comp = components[index]
+                    val delay = comp.delayMs
+                    AnimatedVisibility(
+                        visible = true,
+                        enter = fadeIn(animationSpec = tween(300, delayMillis = delay.toInt())) +
+                                slideInVertically(
+                                    animationSpec = tween(300, delayMillis = delay.toInt()),
+                                    initialOffsetY = { it / 4 }
+                                )
+                    ) {
+                        when (comp.type) {
+                            "appbar" -> AppBarPreview(comp.phase)
+                            "card" -> CardPreview(comp.phase)
+                            "button" -> ButtonPreview(comp.phase)
+                            "list" -> ListPreview(comp.phase)
+                            "form" -> FormPreview(comp.phase)
+                            "nav" -> NavPreview(comp.phase)
+                            else -> CardPreview(comp.phase)
                         }
                     }
                 }
             }
         }
 
+        // Input Widget
         Surface(
             color = Color(0xFF161B22)
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
+                OutlinedTextField(
+                    value = inputText,
+                    onValueChange = { inputText = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Describe tu app...", fontSize = 14.sp) },
+                    maxLines = 4,
+                    shape = RoundedCornerShape(24.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = WireframeAccent,
+                        unfocusedBorderColor = WireframeColor,
+                        focusedContainerColor = Color(0xFF0D1117),
+                        unfocusedContainerColor = Color(0xFF0D1117)
+                    ),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                    keyboardActions = KeyboardActions(onSend = {
+                        if (inputText.isNotBlank() && isReady) {
+                            vm.sendChat(inputText.trim())
+                            inputText = ""
+                        }
+                    })
+                )
+                Spacer(Modifier.width(8.dp))
+                FilledIconButton(
+                    onClick = {
+                        if (inputText.isNotBlank() && isReady) {
+                            vm.sendChat(inputText.trim())
+                            inputText = ""
+                        }
+                    },
+                    enabled = inputText.isNotBlank() && isReady,
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(
+                        containerColor = WireframeAccent
+                    )
+                ) {
+                    Icon(Icons.AutoMirrored.Filled.Send, "Send", modifier = Modifier.size(20.dp))
+                }
+            }
+        }
+
+        // Status bar
+        Surface(color = Color(0xFF161B22)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    "${files.flatMap { it.lines }.size} líneas",
+                    "${components.size} componentes",
                     style = MaterialTheme.typography.labelSmall,
-                    fontFamily = CodeFont,
                     fontSize = 10.sp,
-                    color = EditorLineNum
+                    color = Color(0xFF484F58)
                 )
                 Spacer(Modifier.weight(1f))
-                if (activeFileIndex < files.size) {
-                    Text(
-                        files[activeFileIndex].language.uppercase(),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = CodeFont,
-                        fontSize = 10.sp,
-                        color = EditorCyan
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Text(
-                        "UTF-8",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = CodeFont,
-                        fontSize = 10.sp,
-                        color = EditorLineNum
-                    )
+                Text(
+                    currentPhase.uppercase(),
+                    style = MaterialTheme.typography.labelSmall,
+                    fontSize = 10.sp,
+                    color = if (currentPhase == "complete") UIGreen else WireframeAccent
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppBarPreview(phase: String) {
+    val bgColor = if (phase == "wireframe") Color.Transparent else MaterialTheme.colorScheme.primaryContainer
+    val borderColor = if (phase == "wireframe") WireframeColor else Color.Transparent
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = bgColor,
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        border = if (phase == "wireframe") {
+            androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+        } else null
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (phase == "wireframe") {
+                Box(modifier = Modifier.size(24.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(4.dp)))
+                Spacer(Modifier.width(12.dp))
+                Box(modifier = Modifier.height(12.dp).width(80.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+            } else {
+                Icon(Icons.Filled.Menu, null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                Spacer(Modifier.width(12.dp))
+                Text("TechStore", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CardPreview(phase: String) {
+    val bgColor = if (phase == "wireframe") Color.Transparent else UICardBg
+    val borderColor = if (phase == "wireframe") WireframeColor else Color.Transparent
+
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = bgColor,
+        modifier = Modifier.fillMaxWidth(),
+        border = if (phase == "wireframe") {
+            androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+        } else null,
+        shadowElevation = if (phase == "wireframe") 0.dp else 2.dp
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            if (phase == "wireframe") {
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp).background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp)))
+                Spacer(Modifier.height(8.dp))
+                Box(modifier = Modifier.height(12.dp).width(120.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+                Spacer(Modifier.height(4.dp))
+                Box(modifier = Modifier.height(10.dp).width(200.dp).background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(2.dp)))
+            } else {
+                Box(modifier = Modifier.fillMaxWidth().height(100.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp)))
+                Spacer(Modifier.height(8.dp))
+                Text("iPhone 15 Pro", fontWeight = FontWeight.Medium, color = Color(0xFFC9D1D9))
+                Spacer(Modifier.height(4.dp))
+                Text("$999", color = UIGreen, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ButtonPreview(phase: String) {
+    val bgColor = if (phase == "wireframe") Color.Transparent else UIBlue
+    val borderColor = if (phase == "wireframe") WireframeColor else Color.Transparent
+
+    Surface(
+        shape = RoundedCornerShape(8.dp),
+        color = bgColor,
+        modifier = Modifier.fillMaxWidth().height(44.dp),
+        border = if (phase == "wireframe") {
+            androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+        } else null
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            if (phase == "wireframe") {
+                Box(modifier = Modifier.height(10.dp).width(80.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+            } else {
+                Text("Agregar al Carrito", color = Color.White, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun ListPreview(phase: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        repeat(3) {
+            val bgColor = if (phase == "wireframe") Color.Transparent else UICardBg
+            val borderColor = if (phase == "wireframe") WireframeColor else Color.Transparent
+
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = bgColor,
+                modifier = Modifier.fillMaxWidth().height(48.dp),
+                border = if (phase == "wireframe") {
+                    androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+                } else null
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (phase == "wireframe") {
+                        Box(modifier = Modifier.size(32.dp).background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp)))
+                        Spacer(Modifier.width(12.dp))
+                        Box(modifier = Modifier.height(10.dp).width(100.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+                    } else {
+                        Box(modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(4.dp)))
+                        Spacer(Modifier.width(12.dp))
+                        Text("Item ${it + 1}", color = Color(0xFFC9D1D9))
+                    }
                 }
             }
         }
@@ -332,102 +438,74 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
 }
 
 @Composable
-private fun EditorCodeLine(content: String, lineNum: Int, showCursor: Boolean) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(Color.Transparent)
-            .padding(horizontal = 0.dp, vertical = 0.dp),
-        verticalAlignment = Alignment.Top
-    ) {
-        Box(
-            modifier = Modifier
-                .width(48.dp)
-                .background(Color(0xFF0D1117))
-                .padding(horizontal = 8.dp, vertical = 2.dp),
-            contentAlignment = Alignment.CenterEnd
-        ) {
-            Text(
-                text = "$lineNum",
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = CodeFont,
-                fontSize = 12.sp,
-                color = EditorLineNum
-            )
-        }
+private fun FormPreview(phase: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(2) { index ->
+            val borderColor = if (phase == "wireframe") WireframeColor else MaterialTheme.colorScheme.outline
 
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 12.dp, vertical = 2.dp)
-        ) {
-            Text(
-                text = highlightCode(content),
-                style = MaterialTheme.typography.bodySmall,
-                fontFamily = CodeFont,
-                fontSize = 13.sp,
-                color = Color(0xFFC9D1D9),
-                lineHeight = 18.sp
-            )
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color.Transparent,
+                modifier = Modifier.fillMaxWidth(),
+                border = androidx.compose.foundation.BorderStroke(1.dp, borderColor)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    if (phase == "wireframe") {
+                        Box(modifier = Modifier.height(8.dp).width(60.dp).background(WireframeColor.copy(alpha = 0.3f), RoundedCornerShape(2.dp)))
+                        Spacer(Modifier.height(6.dp))
+                        Box(modifier = Modifier.height(10.dp).fillMaxWidth().background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(2.dp)))
+                    } else {
+                        Text(
+                            if (index == 0) "Email" else "Password",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Box(modifier = Modifier.height(10.dp).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(2.dp)))
+                    }
+                }
+            }
         }
     }
 }
 
-private fun highlightCode(code: String): androidx.compose.ui.text.AnnotatedString {
-    return buildAnnotatedString {
-        var i = 0
-        while (i < code.length) {
-            when {
-                code.substring(i).startsWith("//") -> {
-                    withStyle(SpanStyle(color = EditorLineNum)) { append(code.substring(i)) }
-                    i = code.length
-                }
-                code.substring(i).startsWith("/*") -> {
-                    withStyle(SpanStyle(color = EditorLineNum)) { append(code.substring(i)) }
-                    i = code.length
-                }
-                code.substring(i).startsWith("\"") || code.substring(i).startsWith("'") -> {
-                    val quote = code[i]
-                    val end = code.indexOf(quote, i + 1).let { if (it == -1) code.length else it + 1 }
-                    withStyle(SpanStyle(color = EditorGreen)) { append(code.substring(i, end)) }
-                    i = end
-                }
-                code.substring(i).startsWith("fun ") || code.substring(i).startsWith("val ") ||
-                code.substring(i).startsWith("var ") || code.substring(i).startsWith("class ") ||
-                code.substring(i).startsWith("import ") || code.substring(i).startsWith("return ") ||
-                code.substring(i).startsWith("if ") || code.substring(i).startsWith("else ") ||
-                code.substring(i).startsWith("for ") || code.substring(i).startsWith("while ") ||
-                code.substring(i).startsWith("when ") || code.substring(i).startsWith("object ") ||
-                code.substring(i).startsWith("interface ") || code.substring(i).startsWith("data ") ||
-                code.substring(i).startsWith("sealed ") || code.substring(i).startsWith("override ") ||
-                code.substring(i).startsWith("private ") || code.substring(i).startsWith("public ") ||
-                code.substring(i).startsWith("internal ") || code.substring(i).startsWith("protected ") ||
-                code.substring(i).startsWith("suspend ") || code.substring(i).startsWith("async ") ||
-                code.substring(i).startsWith("await ") || code.substring(i).startsWith("try ") ||
-                code.substring(i).startsWith("catch ") || code.substring(i).startsWith("throw ") -> {
-                    val keywords = listOf("fun ", "val ", "var ", "class ", "import ", "return ", "if ", "else ", "for ", "while ", "when ", "object ", "interface ", "data ", "sealed ", "override ", "private ", "public ", "internal ", "protected ", "suspend ", "async ", "await ", "try ", "catch ", "throw ", "in ", "is ", "as ", "true", "false", "null", "this", "super")
-                    val keyword = keywords.find { code.substring(i).startsWith(it) }
-                    if (keyword != null) {
-                        withStyle(SpanStyle(color = EditorPurple)) { append(keyword) }
-                        i += keyword.length
-                    } else {
-                        withStyle(SpanStyle(color = EditorBlue)) { append(code[i]) }
-                        i++
+@Composable
+private fun NavPreview(phase: String) {
+    val bgColor = if (phase == "wireframe") Color.Transparent else MaterialTheme.colorScheme.surface
+
+    Surface(
+        color = bgColor,
+        modifier = Modifier.fillMaxWidth().height(64.dp),
+        border = if (phase == "wireframe") {
+            androidx.compose.foundation.BorderStroke(1.dp, WireframeColor)
+        } else null
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            repeat(4) {
+                if (phase == "wireframe") {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Box(modifier = Modifier.size(20.dp).background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp)))
+                        Spacer(Modifier.height(4.dp))
+                        Box(modifier = Modifier.height(6.dp).width(30.dp).background(WireframeColor.copy(alpha = 0.2f), RoundedCornerShape(2.dp)))
                     }
-                }
-                code[i].isDigit() -> {
-                    val end = (i until code.length).firstOrNull { !code[it].isDigit() && code[it] != '.' } ?: code.length
-                    withStyle(SpanStyle(color = EditorOrange)) { append(code.substring(i, end)) }
-                    i = end
-                }
-                code.substring(i).startsWith("@") -> {
-                    val end = (i + 1 until code.length).firstOrNull { !code[it].isLetterOrDigit() && code[it] != '_' } ?: code.length
-                    withStyle(SpanStyle(color = EditorYellow)) { append(code.substring(i, end)) }
-                    i = end
-                }
-                else -> {
-                    append(code[i])
-                    i++
+                } else {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            when (it) {
+                                0 -> Icons.Filled.Home
+                                1 -> Icons.Filled.Search
+                                2 -> Icons.Filled.FavoriteBorder
+                                else -> Icons.Filled.Person
+                            },
+                            null,
+                            modifier = Modifier.size(20.dp),
+                            tint = if (it == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
             }
         }

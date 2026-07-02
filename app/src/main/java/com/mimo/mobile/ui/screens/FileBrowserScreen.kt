@@ -1,8 +1,13 @@
 package com.mimo.mobile.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import androidx.compose.animation.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -25,11 +31,18 @@ import androidx.compose.ui.unit.sp
 import com.mimo.mobile.viewmodel.MiMoViewModel
 import java.io.File
 
-data class FileEntry(val name: String, val isDir: Boolean, val size: Long = 0)
+data class FileEntry(
+    val name: String,
+    val isDir: Boolean,
+    val size: Long = 0,
+    val device: String = "phone"
+)
 
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FileBrowserScreen(vm: MiMoViewModel) {
     var currentPath by remember { mutableStateOf(".") }
+    var currentDevice by remember { mutableStateOf("phone") }
     var entries by remember { mutableStateOf(listOf<FileEntry>()) }
     var selectedFile by remember { mutableStateOf<Pair<String, String>?>(null) }
     var editingFile by remember { mutableStateOf<Pair<String, String>?>(null) }
@@ -37,8 +50,13 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var newFileName by remember { mutableStateOf("") }
     var showDeleteDialog by remember { mutableStateOf<FileEntry?>(null) }
+    var showRenameDialog by remember { mutableStateOf<FileEntry?>(null) }
+    var renameName by remember { mutableStateOf("") }
+    var isSelectionMode by remember { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf(setOf<String>()) }
     val pathHistory = remember { mutableStateListOf<String>() }
     val state by vm.state.collectAsState()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         vm.messages.collect { msg ->
@@ -49,7 +67,8 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
                         FileEntry(
                             name = it["name"] as? String ?: "",
                             isDir = it["is_dir"] as? Boolean ?: false,
-                            size = (it["size"] as? Number)?.toLong() ?: 0L
+                            size = (it["size"] as? Number)?.toLong() ?: 0L,
+                            device = it["device"] as? String ?: currentDevice
                         )
                     }
                     currentPath = msg.path ?: "."
@@ -67,6 +86,9 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
                     editingFile = null
                     vm.sendListDir(currentPath)
                 }
+                "file_copied", "file_moved", "file_renamed" -> {
+                    vm.sendListDir(currentPath)
+                }
             }
         }
     }
@@ -77,13 +99,14 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
         }
     }
 
+    // Dialogs
     when {
         showDeleteDialog != null -> {
             val entry = showDeleteDialog!!
             AlertDialog(
                 onDismissRequest = { showDeleteDialog = null },
-                title = { Text("Delete ${if (entry.isDir) "Folder" else "File"}") },
-                text = { Text("Are you sure you want to delete '${entry.name}'?") },
+                title = { Text("Eliminar ${if (entry.isDir) "Carpeta" else "Archivo"}") },
+                text = { Text("Seguro que quieres eliminar '${entry.name}'?") },
                 confirmButton = {
                     Button(
                         onClick = {
@@ -92,23 +115,60 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
                             showDeleteDialog = null
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Delete") }
+                    ) { Text("Eliminar") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showDeleteDialog = null }) { Text("Cancel") }
+                    TextButton(onClick = { showDeleteDialog = null }) { Text("Cancelar") }
+                }
+            )
+        }
+        showRenameDialog != null -> {
+            val entry = showRenameDialog!!
+            AlertDialog(
+                onDismissRequest = { showRenameDialog = null; renameName = "" },
+                title = { Text("Renombrar") },
+                text = {
+                    OutlinedTextField(
+                        value = renameName,
+                        onValueChange = { renameName = it },
+                        label = { Text("Nuevo nombre") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        if (renameName.isNotBlank()) {
+                            val oldPath = if (currentPath == ".") entry.name else "$currentPath/${entry.name}"
+                            val newPath = if (currentPath == ".") renameName else "$currentPath/$renameName"
+                            vm.sendMessage(com.mimo.mobile.network.WsMessage(
+                                type = "rename_file",
+                                id = vm.nextId(),
+                                data = org.json.JSONObject().apply {
+                                    put("old_path", oldPath)
+                                    put("new_path", newPath)
+                                }.toString()
+                            ))
+                            showRenameDialog = null
+                            renameName = ""
+                        }
+                    }) { Text("Renombrar") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRenameDialog = null; renameName = "" }) { Text("Cancelar") }
                 }
             )
         }
         showCreateDialog -> {
             AlertDialog(
                 onDismissRequest = { showCreateDialog = false; newFileName = "" },
-                title = { Text("Create New File") },
+                title = { Text("Crear Archivo") },
                 text = {
                     OutlinedTextField(
                         value = newFileName,
                         onValueChange = { newFileName = it },
-                        label = { Text("Filename") },
-                        placeholder = { Text("example.txt") },
+                        label = { Text("Nombre del archivo") },
+                        placeholder = { Text("ejemplo.txt") },
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -121,10 +181,10 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
                             showCreateDialog = false
                             newFileName = ""
                         }
-                    }) { Text("Create") }
+                    }) { Text("Crear") }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showCreateDialog = false; newFileName = "" }) { Text("Cancel") }
+                    TextButton(onClick = { showCreateDialog = false; newFileName = "" }) { Text("Cancelar") }
                 }
             )
         }
@@ -140,58 +200,159 @@ fun FileBrowserScreen(vm: MiMoViewModel) {
             FileViewer(
                 path = selectedFile!!.first, content = selectedFile!!.second,
                 onClose = { selectedFile = null },
-                onEdit = { editingFile = selectedFile; editContent = selectedFile!!.second; selectedFile = null }
+                onEdit = { editingFile = selectedFile; editContent = selectedFile!!.second; selectedFile = null },
+                onShare = {
+                    val intent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, selectedFile!!.second)
+                    }
+                    context.startActivity(Intent.createChooser(intent, "Compartir archivo"))
+                },
+                onCopy = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText(File(selectedFile!!.first).name, selectedFile!!.second)
+                    clipboard.setPrimaryClip(clip)
+                }
             )
         }
         else -> {
             FileListView(
-                path = currentPath, entries = entries, pathHistory = pathHistory,
+                path = currentPath,
+                entries = entries,
+                pathHistory = pathHistory,
+                currentDevice = currentDevice,
+                isSelectionMode = isSelectionMode,
+                selectedItems = selectedItems,
                 onNavigate = { entry ->
                     val newPath = if (currentPath == ".") entry.name else "$currentPath/${entry.name}"
-                    if (entry.isDir) { pathHistory.add(currentPath); vm.sendListDir(newPath) }
-                    else vm.sendReadFile(newPath)
+                    if (entry.isDir) {
+                        pathHistory.add(currentPath)
+                        currentDevice = entry.device
+                        vm.sendListDir(newPath)
+                    } else {
+                        vm.sendReadFile(newPath)
+                    }
                 },
-                onBack = { if (pathHistory.isNotEmpty()) vm.sendListDir(pathHistory.removeLast()) },
+                onBack = {
+                    if (pathHistory.isNotEmpty()) {
+                        vm.sendListDir(pathHistory.removeLast())
+                    }
+                },
                 onRefresh = { vm.sendListDir(currentPath) },
                 onCreateFile = { showCreateDialog = true },
                 onDeleteFile = { showDeleteDialog = it },
+                onRenameFile = { showRenameDialog = it; renameName = it.name },
+                onShareFile = { entry ->
+                    val fullPath = if (currentPath == ".") entry.name else "$currentPath/${entry.name}"
+                    vm.sendReadFile(fullPath)
+                },
+                onCopyFile = { entry ->
+                    val fullPath = if (currentPath == ".") entry.name else "$currentPath/${entry.name}"
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText(entry.name, fullPath)
+                    clipboard.setPrimaryClip(clip)
+                },
+                onLongPress = { entry ->
+                    isSelectionMode = true
+                    selectedItems = setOf(entry.name)
+                },
+                onSelectToggle = { entry ->
+                    selectedItems = if (entry.name in selectedItems) {
+                        selectedItems - entry.name
+                    } else {
+                        selectedItems + entry.name
+                    }
+                },
+                onExitSelection = {
+                    isSelectionMode = false
+                    selectedItems = emptySet()
+                },
+                onDeleteSelected = {
+                    selectedItems.forEach { name ->
+                        val fullPath = if (currentPath == ".") name else "$currentPath/$name"
+                        vm.sendDeleteFile(fullPath)
+                    }
+                    isSelectionMode = false
+                    selectedItems = emptySet()
+                },
                 canGoBack = pathHistory.isNotEmpty()
             )
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun FileListView(
-    path: String, entries: List<FileEntry>, pathHistory: List<String>,
-    onNavigate: (FileEntry) -> Unit, onBack: () -> Unit, onRefresh: () -> Unit,
-    onCreateFile: () -> Unit, onDeleteFile: (FileEntry) -> Unit, canGoBack: Boolean
+    path: String,
+    entries: List<FileEntry>,
+    pathHistory: List<String>,
+    currentDevice: String,
+    isSelectionMode: Boolean,
+    selectedItems: Set<String>,
+    onNavigate: (FileEntry) -> Unit,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onCreateFile: () -> Unit,
+    onDeleteFile: (FileEntry) -> Unit,
+    onRenameFile: (FileEntry) -> Unit,
+    onShareFile: (FileEntry) -> Unit,
+    onCopyFile: (FileEntry) -> Unit,
+    onLongPress: (FileEntry) -> Unit,
+    onSelectToggle: (FileEntry) -> Unit,
+    onExitSelection: () -> Unit,
+    onDeleteSelected: () -> Unit,
+    canGoBack: Boolean
 ) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         TopAppBar(
             title = {
-                Column {
-                    Text("Files", style = MaterialTheme.typography.titleMedium)
-                    Text(path, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                if (isSelectionMode) {
+                    Text("${selectedItems.size} seleccionados", style = MaterialTheme.typography.titleMedium)
+                } else {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                if (currentDevice == "phone") Icons.Filled.PhoneAndroid else Icons.Filled.Computer,
+                                null,
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text("Files", style = MaterialTheme.typography.titleMedium)
+                        }
+                        Text(path, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
                 }
             },
             navigationIcon = {
-                IconButton(onClick = { if (canGoBack) onBack() }) {
-                    Icon(
-                        if (canGoBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Folder,
-                        contentDescription = if (canGoBack) "Back" else "Root"
-                    )
+                if (isSelectionMode) {
+                    IconButton(onClick = onExitSelection) {
+                        Icon(Icons.Filled.Close, "Exit selection")
+                    }
+                } else {
+                    IconButton(onClick = { if (canGoBack) onBack() }) {
+                        Icon(
+                            if (canGoBack) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Folder,
+                            contentDescription = if (canGoBack) "Back" else "Root"
+                        )
+                    }
                 }
             },
             actions = {
-                IconButton(onClick = onCreateFile, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Filled.Add, "Create file", modifier = Modifier.size(18.dp))
-                }
-                TextButton(onClick = onRefresh) {
-                    Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Refresh", style = MaterialTheme.typography.labelSmall)
+                if (isSelectionMode) {
+                    IconButton(onClick = onDeleteSelected) {
+                        Icon(Icons.Filled.Delete, "Delete selected", tint = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    IconButton(onClick = onCreateFile, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Filled.Add, "Create file", modifier = Modifier.size(18.dp))
+                    }
+                    TextButton(onClick = onRefresh) {
+                        Icon(Icons.Filled.Refresh, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Refresh", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -199,7 +360,19 @@ fun FileListView(
 
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 4.dp)) {
             items(entries, key = { "${it.isDir}_${it.name}" }) { entry ->
-                FileEntryRow(entry, onClick = { onNavigate(entry) }, onLongPress = { onDeleteFile(entry) })
+                FileEntryRow(
+                    entry = entry,
+                    isSelected = entry.name in selectedItems,
+                    isSelectionMode = isSelectionMode,
+                    onClick = {
+                        if (isSelectionMode) onSelectToggle(entry) else onNavigate(entry)
+                    },
+                    onLongPress = { onLongPress(entry) },
+                    onShare = { onShareFile(entry) },
+                    onCopy = { onCopyFile(entry) },
+                    onRename = { onRenameFile(entry) },
+                    onDelete = { onDeleteFile(entry) }
+                )
             }
         }
 
@@ -208,16 +381,29 @@ fun FileListView(
                 modifier = Modifier.padding(12.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                FileInfoItem("Folders", entries.count { it.isDir }.toString(), MaterialTheme.colorScheme.primary)
-                FileInfoItem("Files", entries.count { !it.isDir }.toString(), MaterialTheme.colorScheme.secondary)
+                FileInfoItem("Carpetas", entries.count { it.isDir }.toString(), MaterialTheme.colorScheme.primary)
+                FileInfoItem("Archivos", entries.count { !it.isDir }.toString(), MaterialTheme.colorScheme.secondary)
                 FileInfoItem("Total", entries.size.toString(), MaterialTheme.colorScheme.onSurface)
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun FileEntryRow(entry: FileEntry, onClick: () -> Unit, onLongPress: () -> Unit) {
+fun FileEntryRow(
+    entry: FileEntry,
+    isSelected: Boolean,
+    isSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongPress: () -> Unit,
+    onShare: () -> Unit,
+    onCopy: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
     val (icon, iconColor) = when {
         entry.isDir -> Pair(Icons.Filled.Folder, MaterialTheme.colorScheme.primary)
         entry.name.endsWith(".kt") || entry.name.endsWith(".java") -> Pair(Icons.Filled.Code, MaterialTheme.colorScheme.secondary)
@@ -232,14 +418,26 @@ fun FileEntryRow(entry: FileEntry, onClick: () -> Unit, onLongPress: () -> Unit)
     }
 
     Surface(
-        color = Color.Transparent,
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f) else Color.Transparent,
         modifier = Modifier.fillMaxWidth()
-            .combinedClickable(onClick = onClick, onLongClick = onLongPress)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongPress
+            )
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (isSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+            }
+
             Surface(
                 modifier = Modifier.size(36.dp),
                 shape = RoundedCornerShape(8.dp),
@@ -255,8 +453,44 @@ fun FileEntryRow(entry: FileEntry, onClick: () -> Unit, onLongPress: () -> Unit)
                     entry.name, style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (entry.isDir) FontWeight.Medium else FontWeight.Normal
                 )
-                if (!entry.isDir && entry.size > 0) {
-                    Text(formatFileSize(entry.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (entry.device == "phone") Icons.Filled.PhoneAndroid else Icons.Filled.Computer,
+                        null,
+                        modifier = Modifier.size(10.dp),
+                        tint = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    if (!entry.isDir && entry.size > 0) {
+                        Text(formatFileSize(entry.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+            Box {
+                IconButton(onClick = { showMenu = true }, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.MoreVert, "Options", modifier = Modifier.size(16.dp))
+                }
+                DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Compartir") },
+                        onClick = { showMenu = false; onShare() },
+                        leadingIcon = { Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp)) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copiar") },
+                        onClick = { showMenu = false; onCopy() },
+                        leadingIcon = { Icon(Icons.Filled.ContentCopy, null, modifier = Modifier.size(18.dp)) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Renombrar") },
+                        onClick = { showMenu = false; onRename() },
+                        leadingIcon = { Icon(Icons.Filled.DriveFileRenameOutline, null, modifier = Modifier.size(18.dp)) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Eliminar", color = MaterialTheme.colorScheme.error) },
+                        onClick = { showMenu = false; onDelete() },
+                        leadingIcon = { Icon(Icons.Filled.Delete, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error) }
+                    )
                 }
             }
             if (entry.isDir) {
@@ -276,7 +510,7 @@ fun FileInfoItem(label: String, value: String, color: Color) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FileViewer(path: String, content: String, onClose: () -> Unit, onEdit: () -> Unit) {
+fun FileViewer(path: String, content: String, onClose: () -> Unit, onEdit: () -> Unit, onShare: () -> Unit, onCopy: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         TopAppBar(
             title = {
@@ -291,6 +525,12 @@ fun FileViewer(path: String, content: String, onClose: () -> Unit, onEdit: () ->
                 }
             },
             actions = {
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Filled.Share, "Share")
+                }
+                IconButton(onClick = onCopy) {
+                    Icon(Icons.Filled.ContentCopy, "Copy")
+                }
                 FilledTonalButton(onClick = onEdit) {
                     Icon(Icons.Filled.Edit, null, modifier = Modifier.size(14.dp))
                     Spacer(Modifier.width(4.dp))

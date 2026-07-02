@@ -6,20 +6,27 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
 import kotlin.math.*
 import kotlin.random.Random
 
-private data class GridBlock(
-    val x: Float, val y: Float,
-    val w: Float, val h: Float,
+private data class ConstructionBlock(
+    var x: Float, var y: Float,
+    val targetY: Float,
+    var w: Float, var h: Float,
     val alpha: Float, val speed: Float,
-    val phase: Float
+    val phase: Float, var placed: Boolean = false
 )
 
-private data class LightParticle(
+private data class ConstructionLine(
+    var progress: Float,
+    var y: Float, val speed: Float,
+    var alpha: Float, val width: Float
+)
+
+private data class ProgressParticle(
     var x: Float, var y: Float,
     var speed: Float, var alpha: Float,
     var length: Float, var width: Float
@@ -31,45 +38,58 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
 
     val scrollOffset by infiniteTransition.animateFloat(
         initialValue = 0f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(8000, easing = LinearEasing)),
+        animationSpec = infiniteRepeatable(tween(4000, easing = LinearEasing)),
         label = "scroll"
     )
 
     val shimmer by infiniteTransition.animateFloat(
         initialValue = 0.4f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(2000), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(1000), RepeatMode.Reverse),
         label = "shimmer"
     )
 
     val blockPulse by infiniteTransition.animateFloat(
         initialValue = 0.5f, targetValue = 1f,
-        animationSpec = infiniteRepeatable(tween(1500), RepeatMode.Reverse),
+        animationSpec = infiniteRepeatable(tween(750), RepeatMode.Reverse),
         label = "blockPulse"
     )
 
     val blocks = remember {
-        List(18) {
-            GridBlock(
+        List(24) {
+            ConstructionBlock(
                 x = Random.nextFloat(),
-                y = Random.nextFloat() * 0.85f + 0.05f,
+                y = -0.1f,
+                targetY = Random.nextFloat() * 0.85f + 0.05f,
                 w = Random.nextFloat() * 0.06f + 0.02f,
                 h = Random.nextFloat() * 0.03f + 0.015f,
                 alpha = Random.nextFloat() * 0.5f + 0.3f,
-                speed = Random.nextFloat() * 0.3f + 0.1f,
+                speed = Random.nextFloat() * 0.15f + 0.05f,
                 phase = Random.nextFloat() * 2f * PI.toFloat()
             )
         }
     }
 
+    val constructionLines = remember {
+        List(12) {
+            ConstructionLine(
+                progress = Random.nextFloat(),
+                y = Random.nextFloat(),
+                speed = Random.nextFloat() * 0.004f + 0.002f,
+                alpha = Random.nextFloat() * 0.3f + 0.1f,
+                width = Random.nextFloat() * 1.5f + 0.5f
+            )
+        }
+    }
+
     val particles = remember {
-        Array(40) {
-            LightParticle(
+        Array(60) {
+            ProgressParticle(
                 x = Random.nextFloat(),
                 y = Random.nextFloat(),
-                speed = Random.nextFloat() * 0.008f + 0.003f,
+                speed = Random.nextFloat() * 0.012f + 0.004f,
                 alpha = Random.nextFloat() * 0.8f + 0.2f,
-                length = Random.nextFloat() * 0.06f + 0.02f,
-                width = Random.nextFloat() * 1.5f + 0.8f
+                length = Random.nextFloat() * 0.08f + 0.02f,
+                width = Random.nextFloat() * 1.8f + 0.8f
             )
         }
     }
@@ -78,20 +98,17 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
         val w = size.width
         val h = size.height
 
-        // Dark background
         drawRect(Color(0xFF0B0E17))
 
-        // Vanishing point
         val vpX = w * 0.5f
         val vpY = h * 0.28f
 
-        // Grid colors
         val gridColor = Color(0xFF1A2744)
         val gridColorBright = Color(0xFF243556)
 
-        // Horizontal grid lines (perspective) - scrolling down
-        for (i in 1..16) {
-            val t = (i.toFloat() / 16f + scrollOffset) % 1f
+        // Horizontal grid lines - faster scrolling
+        for (i in 1..20) {
+            val t = (i.toFloat() / 20f + scrollOffset) % 1f
             val y = vpY + (h - vpY) * t * t
             val spread = 0.1f + t * 0.9f
             val left = vpX - w * 0.8f * spread
@@ -100,7 +117,7 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
             drawLine(gridColorBright.copy(alpha = alpha), Offset(left, y), Offset(right, y), strokeWidth = 1.2f)
         }
 
-        // Vertical grid lines (converge to vanishing point)
+        // Vertical grid lines
         for (i in -8..8) {
             val spread = i.toFloat() / 8f
             val bottomX = vpX + w * 0.7f * spread
@@ -108,8 +125,52 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
             drawLine(gridColor.copy(alpha = alpha), Offset(vpX, vpY), Offset(bottomX, h), strokeWidth = 1f)
         }
 
-        // Glowing blue blocks on the grid
+        // Construction lines drawing left to right
+        constructionLines.forEach { line ->
+            line.progress += line.speed
+            if (line.progress > 1.2f) {
+                line.progress = -0.2f
+                line.y = Random.nextFloat()
+                line.alpha = Random.nextFloat() * 0.3f + 0.1f
+            }
+
+            val ly = vpY + (h - vpY) * line.y
+            val lineEnd = w * line.progress.coerceIn(0f, 1f)
+            val lineStart = (w * (line.progress - 0.3f)).coerceAtLeast(0f)
+
+            if (lineEnd > lineStart) {
+                drawLine(
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color(0xFF00D4FF).copy(alpha = 0f),
+                            Color(0xFF00D4FF).copy(alpha = line.alpha * shimmer),
+                            Color(0xFF00D4FF).copy(alpha = line.alpha * shimmer),
+                            Color(0xFF00D4FF).copy(alpha = 0f)
+                        ),
+                        startX = lineStart,
+                        endX = lineEnd
+                    ),
+                    start = Offset(lineStart, ly),
+                    end = Offset(lineEnd, ly),
+                    strokeWidth = line.width
+                )
+            }
+        }
+
+        // Falling construction blocks
         blocks.forEach { block ->
+            if (!block.placed) {
+                block.y += block.speed
+                if (block.y >= block.targetY) {
+                    block.y = block.targetY
+                    block.placed = true
+                }
+            } else {
+                // Subtle shift when placed
+                block.x += sin(scrollOffset * PI.toFloat() * 2f + block.phase) * 0.0003f
+                block.x = block.x.coerceIn(0.05f, 0.95f)
+            }
+
             val bx = w * block.x
             val depth = block.y
             val by = vpY + (h - vpY) * depth * depth
@@ -129,14 +190,14 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
                     radius = bw * 2.5f
                 ),
                 topLeft = Offset(bx - bw, by - bh),
-                size = androidx.compose.ui.geometry.Size(bw * 2, bh * 2)
+                size = Size(bw * 2, bh * 2)
             )
 
             // Block rectangle
             drawRect(
                 color = Color(0xFF1E4D8C).copy(alpha = pulseAlpha),
                 topLeft = Offset(bx, by),
-                size = androidx.compose.ui.geometry.Size(bw, bh)
+                size = Size(bw, bh)
             )
 
             // Top highlight
@@ -148,7 +209,7 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        // Falling light particles - faster and brighter
+        // Falling light particles - faster and more
         particles.forEach { p ->
             p.y += p.speed
             if (p.y > 1.1f) {
@@ -164,7 +225,6 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
             val fadeOut = ((1f - p.y) / 0.15f).coerceIn(0f, 1f)
             val finalAlpha = p.alpha * fadeIn * fadeOut
 
-            // Light streak
             drawLine(
                 brush = Brush.verticalGradient(
                     colors = listOf(
@@ -182,14 +242,14 @@ fun PerspectiveGridBackground(modifier: Modifier = Modifier) {
             )
         }
 
-        // Horizontal scan line - more visible
+        // Horizontal scan line - continuous sweep
         val scanY = h * scrollOffset
         drawLine(
             brush = Brush.horizontalGradient(
                 colors = listOf(
                     Color.Transparent,
-                    Color(0xFF00D4FF).copy(alpha = 0.12f),
-                    Color(0xFF00D4FF).copy(alpha = 0.12f),
+                    Color(0xFF00D4FF).copy(alpha = 0.15f),
+                    Color(0xFF00D4FF).copy(alpha = 0.15f),
                     Color.Transparent
                 )
             ),
