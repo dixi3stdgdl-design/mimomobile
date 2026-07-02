@@ -166,7 +166,7 @@ class WebSocketClient {
     }
 
     private fun performHandshake() {
-        val key = Base64.getEncoder().encodeToString(ByteArray(16).also { Random().nextBytes(it) })
+        val key = Base64.getEncoder().encodeToString(ByteArray(16).also { kotlin.random.Random.Default.nextBytes(it) })
         val request = buildString {
             append("GET / HTTP/1.1\r\n")
             append("Host: $currentHost:$currentPort\r\n")
@@ -376,7 +376,7 @@ class WebSocketClient {
             frame.add((0x80 or 127).toByte())
             for (i in 7 downTo 0) frame.add(((data.size shr (i * 8)) and 0xFF).toByte())
         }
-        val mask = ByteArray(4).also { Random().nextBytes(it) }
+        val mask = ByteArray(4).also { kotlin.random.Random.Default.nextBytes(it) }
         frame.addAll(mask.toList())
         frame.addAll(data.mapIndexed { i, b -> (b.toInt().xor(mask[i % 4].toInt()) and 0xFF).toByte() })
         return frame.toByteArray()
