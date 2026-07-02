@@ -1,5 +1,10 @@
 package com.mimo.mobile.network
 
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.*
@@ -7,6 +12,9 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.*
 import org.json.JSONObject
+import kotlin.math.min
+import kotlin.math.pow
+import kotlin.random.Random
 
 data class WsMessage(
     val type: String,
@@ -39,7 +47,10 @@ data class WsMessage(
 
 class WebSocketClient {
     companion object {
-        const val AUTH_PIN = "MIMO2026"
+        var AUTH_PIN_OVERRIDE: String? = null
+        private const val DEFAULT_AUTH_PIN = "MIMO2026"
+        const val BASE_DELAY_MS = 1000L
+        const val MAX_DELAY_MS = 60000L
     }
 
     private var socket: Socket? = null
@@ -54,12 +65,57 @@ class WebSocketClient {
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ConnectionState> = _connectionState
 
+    private val _isNetworkAvailable = MutableStateFlow(true)
+    val isNetworkAvailable: StateFlow<Boolean> = _isNetworkAvailable
+
     private var requestId = 0
     private var shouldReconnect = false
     private var currentHost = ""
     private var currentPort = 0
     private var reconnectAttempts = 0
-    private val maxReconnectAttempts = 5
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var connectivityManager: ConnectivityManager? = null
+
+    fun initNetworkMonitor(context: Context) {
+        connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val currentNetwork = connectivityManager?.activeNetwork
+        val caps = connectivityManager?.getNetworkCapabilities(currentNetwork)
+        _isNetworkAvailable.value = caps?.let {
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        } ?: false
+
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .build()
+
+        networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                _isNetworkAvailable.value = true
+                if (shouldReconnect && _connectionState.value != ConnectionState.CONNECTED) {
+                    reconnectAttempts = 0
+                    scope.launch {
+                        delay(500)
+                        doConnect()
+                    }
+                }
+            }
+
+            override fun onLost(network: Network) {
+                _isNetworkAvailable.value = false
+            }
+
+            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
+                val available = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                _isNetworkAvailable.value = available
+            }
+        }
+
+        try {
+            connectivityManager?.registerNetworkCallback(request, networkCallback!!)
+        } catch (_: Exception) {}
+    }
 
     fun connect(host: String, port: Int) {
         currentHost = host
@@ -72,6 +128,11 @@ class WebSocketClient {
     private fun doConnect() {
         scope.launch {
             try {
+                if (!_isNetworkAvailable.value) {
+                    _connectionState.value = ConnectionState.DISCONNECTED
+                    return@launch
+                }
+
                 _connectionState.value = ConnectionState.CONNECTING
                 socket?.close()
                 val sock = Socket()
@@ -85,10 +146,10 @@ class WebSocketClient {
                 _connectionState.value = ConnectionState.CONNECTED
                 reconnectAttempts = 0
                 startReading()
-                // Send authentication
+
                 val authMsg = JSONObject().apply {
                     put("type", "auth")
-                    put("pin", AUTH_PIN)
+                    put("pin", AUTH_PIN_OVERRIDE ?: DEFAULT_AUTH_PIN)
                 }
                 val authFrame = encodeFrame(authMsg.toString().toByteArray())
                 synchronized(output!!) {
@@ -104,12 +165,17 @@ class WebSocketClient {
     }
 
     private fun scheduleReconnect() {
-        if (!shouldReconnect || reconnectAttempts >= maxReconnectAttempts) return
+        if (!shouldReconnect) return
+        if (!_isNetworkAvailable.value) return
+
         reconnectAttempts++
-        val delayMs = minOf(1000L * reconnectAttempts, 10000L)
+        val exponentialDelay = BASE_DELAY_MS * 2.0.pow(reconnectAttempts - 1).toLong()
+        val jitter = Random.nextLong(0, exponentialDelay / 4)
+        val delayMs = min(exponentialDelay + jitter, MAX_DELAY_MS)
+
         scope.launch {
             delay(delayMs)
-            if (shouldReconnect && _connectionState.value != ConnectionState.CONNECTED) {
+            if (shouldReconnect && _connectionState.value != ConnectionState.CONNECTED && _isNetworkAvailable.value) {
                 doConnect()
             }
         }
@@ -120,6 +186,14 @@ class WebSocketClient {
         readerJob?.cancel()
         try { socket?.close() } catch (_: Exception) {}
         _connectionState.value = ConnectionState.DISCONNECTED
+    }
+
+    fun destroy() {
+        disconnect()
+        networkCallback?.let { callback ->
+            try { connectivityManager?.unregisterNetworkCallback(callback) } catch (_: Exception) {}
+        }
+        scope.cancel()
     }
 
     private fun performHandshake() {

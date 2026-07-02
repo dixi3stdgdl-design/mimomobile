@@ -80,6 +80,7 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
     val state: StateFlow<AppState> = _state.asStateFlow()
 
     val messages: SharedFlow<WsMessage> = client.messages
+    val isNetworkAvailable: StateFlow<Boolean> = client.isNetworkAvailable
 
     private val _instances = mutableStateListOf(
         ChatInstance("default", "Main")
@@ -92,13 +93,17 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
     val activeInstanceIdFlow: StateFlow<String> = _activeInstanceId.asStateFlow()
 
     init {
+        client.initNetworkMonitor(application)
+
         viewModelScope.launch {
             dataStore.data.map { prefs ->
                 val host = prefs[HOST_KEY] ?: "127.0.0.1"
                 val port = prefs[PORT_KEY] ?: "8765"
-                host to port
-            }.collect { (host, port) ->
+                val pin = prefs[PIN_KEY] ?: "MIMO2026"
+                Triple(host, port, pin)
+            }.collect { (host, port, pin) ->
                 _state.update { it.copy(serverHost = host, serverPort = port) }
+                WebSocketClient.AUTH_PIN_OVERRIDE = pin
             }
         }
 
@@ -256,6 +261,15 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         viewModelScope.launch {
+            client.messages.collect { msg ->
+                if (msg.type == "chat_end") {
+                    kotlinx.coroutines.delay(300)
+                    connect()
+                }
+            }
+        }
+
+        viewModelScope.launch {
             kotlinx.coroutines.delay(300)
             connect()
         }
@@ -300,6 +314,14 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
     fun updatePort(port: String) {
         _state.update { it.copy(serverPort = port) }
         viewModelScope.launch { dataStore.edit { it[PORT_KEY] = port } }
+    }
+
+    fun updatePin(pin: String) {
+        viewModelScope.launch { dataStore.edit { it[PIN_KEY] = pin } }
+    }
+
+    fun updateTheme(darkMode: Boolean) {
+        viewModelScope.launch { dataStore.edit { it[DARK_MODE_KEY] = darkMode } }
     }
 
     fun updateToggle(key: Preferences.Key<Boolean>, value: Boolean) {
@@ -397,12 +419,13 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
-        client.disconnect()
+        client.destroy()
     }
 
     companion object {
         val HOST_KEY = stringPreferencesKey("server_host")
         val PORT_KEY = stringPreferencesKey("server_port")
+        val PIN_KEY = stringPreferencesKey("auth_pin")
         val MESSAGES_KEY = stringPreferencesKey("chat_messages")
         val AUTO_CONNECT_KEY = booleanPreferencesKey("auto_connect")
         val SCREEN_STREAMING_KEY = booleanPreferencesKey("screen_streaming")
