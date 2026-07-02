@@ -24,7 +24,7 @@ val Application.dataStore: DataStore<Preferences> by preferencesDataStore(name =
 data class AppState(
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val serverHost: String = "127.0.0.1",
-    val serverPort: String = "8765",
+    val serverPort: String = "7654",
     val isSplashDone: Boolean = false,
     val lastError: String? = null,
     val connectedAt: Long? = null,
@@ -98,7 +98,7 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             dataStore.data.map { prefs ->
                 val host = prefs[HOST_KEY] ?: "127.0.0.1"
-                val port = prefs[PORT_KEY] ?: "8765"
+                val port = prefs[PORT_KEY] ?: "7654"
                 val pin = prefs[PIN_KEY] ?: "MIMO2026"
                 Triple(host, port, pin)
             }.collect { (host, port, pin) ->
@@ -299,7 +299,7 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         val s = _state.value
         if (!s.autoConnect && s.connectionState == ConnectionState.DISCONNECTED) return
         if (s.serverHost.isEmpty()) return
-        val port = s.serverPort.toIntOrNull() ?: 8765
+        val port = s.serverPort.toIntOrNull() ?: 7654
         client.connect(s.serverHost, port)
     }
 
