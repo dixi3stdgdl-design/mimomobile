@@ -1,10 +1,6 @@
 package com.mimo.mobile.network
 
 import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
-import android.net.NetworkRequest
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import java.io.*
@@ -73,48 +69,23 @@ class WebSocketClient {
     private var currentHost = ""
     private var currentPort = 0
     private var reconnectAttempts = 0
-    private var networkCallback: ConnectivityManager.NetworkCallback? = null
-    private var connectivityManager: ConnectivityManager? = null
+    private var networkMonitor: NetworkMonitor? = null
 
     fun initNetworkMonitor(context: Context) {
-        connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        val currentNetwork = connectivityManager?.activeNetwork
-        val caps = connectivityManager?.getNetworkCapabilities(currentNetwork)
-        _isNetworkAvailable.value = caps?.let {
-            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-            it.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        } ?: false
+        networkMonitor = NetworkMonitor(context)
+        networkMonitor!!.start()
 
-        val request = NetworkRequest.Builder()
-            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-            .build()
-
-        networkCallback = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                _isNetworkAvailable.value = true
-                if (shouldReconnect && _connectionState.value != ConnectionState.CONNECTED) {
+        scope.launch {
+            networkMonitor!!.isAvailable.collect { available ->
+                val wasUnavailable = !_isNetworkAvailable.value
+                _isNetworkAvailable.value = available
+                if (available && wasUnavailable && shouldReconnect && _connectionState.value != ConnectionState.CONNECTED) {
                     reconnectAttempts = 0
-                    scope.launch {
-                        delay(500)
-                        doConnect()
-                    }
+                    delay(500)
+                    doConnect()
                 }
             }
-
-            override fun onLost(network: Network) {
-                _isNetworkAvailable.value = false
-            }
-
-            override fun onCapabilitiesChanged(network: Network, caps: NetworkCapabilities) {
-                val available = caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
-                    caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-                _isNetworkAvailable.value = available
-            }
         }
-
-        try {
-            connectivityManager?.registerNetworkCallback(request, networkCallback!!)
-        } catch (_: Exception) {}
     }
 
     fun connect(host: String, port: Int) {
@@ -190,9 +161,7 @@ class WebSocketClient {
 
     fun destroy() {
         disconnect()
-        networkCallback?.let { callback ->
-            try { connectivityManager?.unregisterNetworkCallback(callback) } catch (_: Exception) {}
-        }
+        networkMonitor?.stop()
         scope.cancel()
     }
 
