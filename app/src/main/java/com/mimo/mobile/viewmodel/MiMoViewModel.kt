@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.mimo.mobile.network.AdbHttpClient
 import com.mimo.mobile.network.ConnectionState
 import com.mimo.mobile.network.WebSocketClient
 import com.mimo.mobile.network.WsMessage
@@ -24,7 +25,7 @@ val Application.dataStore: DataStore<Preferences> by preferencesDataStore(name =
 data class AppState(
     val connectionState: ConnectionState = ConnectionState.DISCONNECTED,
     val serverHost: String = "127.0.0.1",
-    val serverPort: String = "7654",
+    val serverPort: String = "8765",
     val isSplashDone: Boolean = false,
     val lastError: String? = null,
     val connectedAt: Long? = null,
@@ -75,6 +76,7 @@ data class ChatMsg(
 class MiMoViewModel(application: Application) : AndroidViewModel(application) {
     private val dataStore = application.dataStore
     private val client = WebSocketClient()
+    private val adbHttp = AdbHttpClient()
 
     private val _state = MutableStateFlow(AppState())
     val state: StateFlow<AppState> = _state.asStateFlow()
@@ -98,12 +100,13 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             dataStore.data.map { prefs ->
                 val host = prefs[HOST_KEY] ?: "127.0.0.1"
-                val port = prefs[PORT_KEY] ?: "7654"
+                val port = prefs[PORT_KEY] ?: "8765"
                 val pin = prefs[PIN_KEY] ?: "MIMO2026"
                 Triple(host, port, pin)
             }.collect { (host, port, pin) ->
                 _state.update { it.copy(serverHost = host, serverPort = port) }
                 WebSocketClient.AUTH_PIN_OVERRIDE = pin
+                adbHttp.configure(host)
             }
         }
 
@@ -383,10 +386,98 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         return id
     }
 
-    fun sendDeviceList(): String = client.sendDeviceList()
-    fun sendDeviceCommand(serial: String, command: String, action: String = "shell"): String = client.sendDeviceCommand(serial, command, action)
-    fun sendDeviceInput(serial: String, inputType: String, value: String): String = client.sendDeviceInput(serial, inputType, value)
-    fun sendDeviceInstall(serial: String, apkPath: String): String = client.sendDeviceInstall(serial, apkPath)
+    fun sendDeviceList(): String {
+        if (_state.value.connectionState == ConnectionState.CONNECTED) {
+            return client.sendDeviceList()
+        }
+        viewModelScope.launch {
+            try {
+                val devices = adbHttp.getDevices()
+                val arr = JSONArray()
+                devices.forEach { d ->
+                    arr.put(JSONObject().apply {
+                        put("serial", d.serial)
+                        put("state", d.state)
+                        put("model", d.model)
+                    })
+                }
+                client._messages.emit(WsMessage(type = "device_list", data = arr.toString()))
+            } catch (e: Exception) {
+                client._messages.emit(WsMessage(type = "error", data = "HTTP ADB failed: ${e.message}"))
+            }
+        }
+        return ""
+    }
+
+    fun sendDeviceCommand(serial: String, command: String, action: String = "shell"): String {
+        if (_state.value.connectionState == ConnectionState.CONNECTED) {
+            return client.sendDeviceCommand(serial, command, action)
+        }
+        viewModelScope.launch {
+            try {
+                val result = adbHttp.execCommand(serial, command, action)
+                client._messages.emit(WsMessage(
+                    type = "device_output",
+                    data = JSONObject().apply {
+                        put("serial", serial)
+                        put("stdout", result.stdout)
+                        put("stderr", result.stderr)
+                        put("exit_code", result.exitCode)
+                    }.toString()
+                ))
+            } catch (e: Exception) {
+                client._messages.emit(WsMessage(type = "error", data = "HTTP ADB failed: ${e.message}"))
+            }
+        }
+        return ""
+    }
+
+    fun sendDeviceInput(serial: String, inputType: String, value: String): String {
+        if (_state.value.connectionState == ConnectionState.CONNECTED) {
+            return client.sendDeviceInput(serial, inputType, value)
+        }
+        viewModelScope.launch {
+            try {
+                val result = adbHttp.sendInput(serial, inputType, value)
+                client._messages.emit(WsMessage(
+                    type = "device_output",
+                    data = JSONObject().apply {
+                        put("serial", serial)
+                        put("stdout", result.stdout)
+                        put("stderr", result.stderr)
+                        put("exit_code", result.exitCode)
+                    }.toString()
+                ))
+            } catch (e: Exception) {
+                client._messages.emit(WsMessage(type = "error", data = "HTTP ADB failed: ${e.message}"))
+            }
+        }
+        return ""
+    }
+
+    fun sendDeviceInstall(serial: String, apkPath: String): String {
+        if (_state.value.connectionState == ConnectionState.CONNECTED) {
+            return client.sendDeviceInstall(serial, apkPath)
+        }
+        viewModelScope.launch {
+            try {
+                val result = adbHttp.installApk(serial, apkPath)
+                client._messages.emit(WsMessage(
+                    type = "device_output",
+                    data = JSONObject().apply {
+                        put("serial", serial)
+                        put("stdout", result.stdout)
+                        put("stderr", result.stderr)
+                        put("exit_code", result.exitCode)
+                    }.toString()
+                ))
+            } catch (e: Exception) {
+                client._messages.emit(WsMessage(type = "error", data = "HTTP ADB failed: ${e.message}"))
+            }
+        }
+        return ""
+    }
+
     fun sendAdbConfigure(serial: String): String = client.sendAdbConfigure(serial)
     fun sendMessage(msg: WsMessage) { client.sendMessage(msg) }
     fun nextId(): String = client.nextId()
