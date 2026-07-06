@@ -31,6 +31,9 @@ data class AppState(
     val connectedAt: Long? = null,
     val messageCount: Int = 0,
     val autoConnect: Boolean = true,
+    val connectionAnchored: Boolean = false,
+    val pairingCode: String? = null,
+    val isPaired: Boolean = false,
     val screenStreaming: Boolean = true,
     val hapticFeedback: Boolean = true,
     val autoScroll: Boolean = true,
@@ -353,9 +356,82 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
                 CRASH_REPORT_KEY -> it.copy(crashReporting = value)
                 EXPERIMENTAL_KEY -> it.copy(experimentalFeatures = value)
                 BETA_UPDATES_KEY -> it.copy(betaUpdates = value)
+                ANCHORED_KEY -> it.copy(connectionAnchored = value)
+                PAIRED_KEY -> it.copy(isPaired = value)
                 else -> it
             }
         }
+    }
+
+    fun toggleAnchored(anchored: Boolean) {
+        viewModelScope.launch {
+            dataStore.edit { prefs ->
+                prefs[ANCHORED_KEY] = anchored
+                if (anchored) {
+                    // Save current host/port as anchored values
+                    prefs[HOST_KEY] = _state.value.serverHost
+                    prefs[PORT_KEY] = _state.value.serverPort
+                }
+            }
+        }
+        _state.update { it.copy(connectionAnchored = anchored) }
+        
+        if (anchored) {
+            // Generate pairing code and attempt pairing
+            startPairing()
+        }
+    }
+
+    private fun startPairing() {
+        val s = _state.value
+        if (s.serverHost.isEmpty()) return
+        
+        // Generate a unique pairing code
+        val code = (1000..9999).random().toString()
+        _state.update { it.copy(pairingCode = code) }
+        
+        // Try to connect and verify pairing
+        viewModelScope.launch {
+            val port = s.serverPort.toIntOrNull() ?: 8765
+            client.connect(s.serverHost, port)
+            
+            // Wait for connection and verify
+            kotlinx.coroutines.delay(2000)
+            if (_state.value.connectionState == ConnectionState.CONNECTED) {
+                // Send pairing verification
+                client.sendMessage(WsMessage(
+                    type = "pair",
+                    data = JSONObject().apply {
+                        put("code", code)
+                        put("device_id", android.os.Build.MODEL)
+                        put("device_name", android.os.Build.MANUFACTURER)
+                    }.toString()
+                ))
+                
+                // Mark as paired after successful connection
+                kotlinx.coroutines.delay(1000)
+                _state.update { it.copy(isPaired = true) }
+                viewModelScope.launch { dataStore.edit { it[PAIRED_KEY] = true } }
+            }
+        }
+    }
+
+    fun unpair() {
+        _state.update { 
+            it.copy(
+                connectionAnchored = false,
+                isPaired = false,
+                pairingCode = null
+            ) 
+        }
+        viewModelScope.launch {
+            dataStore.edit { prefs ->
+                prefs[ANCHORED_KEY] = false
+                prefs[PAIRED_KEY] = false
+                prefs.remove(PAIRING_CODE_KEY)
+            }
+        }
+        disconnect()
     }
 
     fun sendChat(prompt: String, instanceId: String = activeInstanceId): String {
@@ -519,6 +595,9 @@ class MiMoViewModel(application: Application) : AndroidViewModel(application) {
         val PIN_KEY = stringPreferencesKey("auth_pin")
         val MESSAGES_KEY = stringPreferencesKey("chat_messages")
         val AUTO_CONNECT_KEY = booleanPreferencesKey("auto_connect")
+        val ANCHORED_KEY = booleanPreferencesKey("connection_anchored")
+        val PAIRED_KEY = booleanPreferencesKey("is_paired")
+        val PAIRING_CODE_KEY = stringPreferencesKey("pairing_code")
         val SCREEN_STREAMING_KEY = booleanPreferencesKey("screen_streaming")
         val HAPTIC_FEEDBACK_KEY = booleanPreferencesKey("haptic_feedback")
         val AUTO_SCROLL_KEY = booleanPreferencesKey("auto_scroll")

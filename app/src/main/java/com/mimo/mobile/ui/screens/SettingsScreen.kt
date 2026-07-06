@@ -135,43 +135,178 @@ fun SettingsScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        // Server Connection
+        // Server Connection with Anchoring
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // Header with toggle
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Icon(Icons.Filled.Router, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                     Spacer(Modifier.width(12.dp))
-                    Text("MiMo Code Server", style = MaterialTheme.typography.titleMedium)
+                    Text("MiMo Code Server", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                    
+                    // Anchoring Toggle
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            if (state.connectionAnchored) "Anchored" else "Off",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.connectionAnchored) MaterialTheme.colorScheme.primary 
+                                    else MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Switch(
+                            checked = state.connectionAnchored,
+                            onCheckedChange = { vm.toggleAnchored(it) },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = MaterialTheme.colorScheme.primary,
+                                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer
+                            )
+                        )
+                    }
                 }
+                
                 Spacer(Modifier.height(16.dp))
+                
+                if (state.connectionAnchored) {
+                    // Anchored Mode - Show status and quick connect
+                    if (state.isPaired) {
+                        // Paired and anchored - show connection status
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.Lock,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Device Paired",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Connected to ${state.serverHost}:${state.serverPort}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(Modifier.height(12.dp))
+                        
+                        // Quick Connect Button
+                        Button(
+                            onClick = onReconnect,
+                            modifier = Modifier.fillMaxWidth().height(48.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (connectionState == ConnectionState.CONNECTED) 
+                                    MaterialTheme.colorScheme.secondary
+                                else MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            Icon(
+                                if (connectionState == ConnectionState.CONNECTED) Icons.Filled.LinkOff 
+                                else Icons.Filled.Link,
+                                null, modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (connectionState == ConnectionState.CONNECTED) "Disconnect" 
+                                else "Quick Connect",
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    } else {
+                        // Not paired yet - show pairing status
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Filled.VpnKey,
+                                    null,
+                                    tint = MaterialTheme.colorScheme.tertiary,
+                                    modifier = Modifier.size(32.dp)
+                                )
+                                Spacer(Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Pairing...",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        "Code: ${state.pairingCode ?: "Generating..."}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(Modifier.height(12.dp))
+                    
+                    // Unpair button
+                    OutlinedButton(
+                        onClick = { vm.unpair() },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(Icons.Filled.LinkOff, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Unpair & Configure")
+                    }
+                    
+                } else {
+                    // Configuration Mode - Show host/port fields
+                    OutlinedTextField(
+                        value = host, onValueChange = onHostChange,
+                        label = { Text("Server Host") },
+                        placeholder = { Text("127.0.0.1") },
+                        leadingIcon = { Icon(Icons.Filled.Router, null) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    OutlinedTextField(
+                        value = port, onValueChange = onPortChange,
+                        label = { Text("WebSocket Port") },
+                        placeholder = { Text("8765") },
+                        leadingIcon = { Icon(Icons.Filled.Lan, null) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true
+                    )
+                    Spacer(Modifier.height(16.dp))
 
-                OutlinedTextField(
-                    value = host, onValueChange = onHostChange,
-                    label = { Text("Server Host") },
-                    placeholder = { Text("127.0.0.1") },
-                    leadingIcon = { Icon(Icons.Filled.Router, null) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true
-                )
-                Spacer(Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = port, onValueChange = onPortChange,
-                    label = { Text("WebSocket Port") },
-                    placeholder = { Text("8765") },
-                    leadingIcon = { Icon(Icons.Filled.Lan, null) },
-                    modifier = Modifier.fillMaxWidth(), singleLine = true
-                )
-                Spacer(Modifier.height(16.dp))
-
-                Button(
-                    onClick = onReconnect,
-                    modifier = Modifier.fillMaxWidth().height(48.dp)
-                ) {
-                    Icon(Icons.Filled.Link, null, modifier = Modifier.size(20.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Connect", fontWeight = FontWeight.Bold)
+                    Button(
+                        onClick = onReconnect,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        Icon(Icons.Filled.Link, null, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Connect & Anchor", fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
@@ -190,6 +325,8 @@ fun SettingsScreen(
                 StatusRow("Host", host.ifEmpty { "Not set" })
                 StatusRow("Port", port)
                 StatusRow("Protocol", "WebSocket")
+                StatusRow("Anchored", if (state.connectionAnchored) "Yes" else "No")
+                StatusRow("Paired", if (state.isPaired) "Yes" else "No")
             }
         }
 
