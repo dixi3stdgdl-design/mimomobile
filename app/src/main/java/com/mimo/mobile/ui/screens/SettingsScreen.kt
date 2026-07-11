@@ -601,39 +601,13 @@ fun PremiumSection() {
             )
             Spacer(Modifier.height(16.dp))
 
-            // Free Plan
+            // MiMo Mobile — Single Price
             PlanCard(
-                name = "Free",
-                price = "$0",
-                period = "forever",
-                features = listOf("1 device", "Basic chat", "Community support"),
-                isCurrentPlan = true,
-                onClick = {}
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Pro Plan
-            PlanCard(
-                name = "Pro",
-                price = "$9.99",
-                period = "/month",
-                features = listOf("5 devices", "Remote desktop", "File manager", "Priority support"),
-                isRecommended = true,
-                onClick = {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://link.mercadopago.com.mx/mimomobile"))
-                    context.startActivity(intent)
-                }
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            // Team Plan
-            PlanCard(
-                name = "Team",
+                name = "MiMo Mobile",
                 price = "$29.99",
-                period = "/month",
-                features = listOf("Unlimited devices", "All Pro features", "Dedicated support", "Early access"),
+                period = "one-time",
+                features = listOf("Unlimited devices", "Remote desktop", "File manager", "Unlimited chat", "Lifetime updates"),
+                isRecommended = true,
                 onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://link.mercadopago.com.mx/mimomobile"))
                     context.startActivity(intent)

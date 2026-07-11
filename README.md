@@ -41,11 +41,9 @@ App Android nativa que convierte tu teléfono en un centro de control remoto par
 
 ## Modelo de negocio
 
-| Tier | Precio | Incluye |
-|------|--------|---------|
-| **Free** | $0 | 1 dispositivo, chat básico, 50 mensajes/día |
-| **Pro** | $9.99/mes | 5 dispositivos, remote desktop, file manager, sin límites |
-| **Team** | $29.99/mes | Dispositivos ilimitados, prioridad de soporte, actualizaciones beta |
+| Producto | Precio | Incluye |
+|----------|--------|---------|
+| **MiMo Mobile** | $29.99 USD | Compra única. Dispositivos ilimitados, remote desktop, file manager, chat ilimitado, sin suscripciones |
 
 ---
 

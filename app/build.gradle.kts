@@ -3,6 +3,11 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("jacoco")
+}
+
+jacoco {
+    toolVersion = "0.8.12"
 }
 
 val keyProperties = Properties().apply {
@@ -104,4 +109,69 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+
+    // Unit tests
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+    testImplementation("org.json:json:20231013")
+
+    // Instrumented tests
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test:rules:1.5.0")
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.compose.material3:material3")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
+}
+
+tasks.register<JacocoReport>("jacocoFullCoverageReport") {
+    dependsOn("testFreeDebugUnitTest", "testProDebugUnitTest")
+
+    additionalSourceDirs.setFrom(fileTree("src/main/java") {
+        include("**/*.kt")
+    })
+    sourceDirectories.setFrom(fileTree("src/main/java") {
+        include("**/*.kt")
+    })
+    classDirectories.setFrom(fileTree("build/tmp/kotlin-classes/freeDebug") {
+        include("**/*.class")
+        exclude("**/R.class", "**/R\$*.class", "**/BuildConfig.*", "**/Manifest*.*")
+    })
+    executionData.setFrom(fileTree("build") {
+        include("**/*.exec", "**/*.ec")
+    })
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacocoFullCoverageReport.xml"))
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/jacocoFullCoverageReport"))
+    }
+}
+
+tasks.register<JacocoReport>("jacocoUnitTestReport") {
+    dependsOn("testFreeDebugUnitTest")
+
+    additionalSourceDirs.setFrom(fileTree("src/main/java") {
+        include("**/*.kt")
+    })
+    sourceDirectories.setFrom(fileTree("src/main/java") {
+        include("**/*.kt")
+    })
+    classDirectories.setFrom(fileTree("build/tmp/kotlin-classes/freeDebug") {
+        include("**/*.class")
+        exclude("**/R.class", "**/R\$*.class", "**/BuildConfig.*", "**/Manifest*.*")
+    })
+    executionData.setFrom(fileTree("build") {
+        include("**/*.exec", "**/*.ec")
+    })
+
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(false)
+        xml.outputLocation.set(layout.buildDirectory.file("reports/jacoco/jacocoUnitTestReport.xml"))
+        html.outputLocation.set(layout.buildDirectory.dir("reports/jacoco/jacocoUnitTestReport"))
+    }
 }

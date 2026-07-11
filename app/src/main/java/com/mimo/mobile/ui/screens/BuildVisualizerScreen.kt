@@ -47,6 +47,7 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
     var isBuilding by remember { mutableStateOf(false) }
     var components by remember { mutableStateOf(listOf<VisualComponent>()) }
     var currentPhase by remember { mutableStateOf("idle") }
+    var showDevin by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val state by vm.state.collectAsState()
     val isReady = state.connectionState == com.mimo.mobile.network.ConnectionState.CONNECTED
@@ -132,6 +133,19 @@ fun BuildVisualizerScreen(vm: MiMoViewModel) {
                         fontSize = 10.sp
                     )
                 }
+                // Devin AI Button
+                IconButton(
+                    onClick = { showDevin = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        Icons.Filled.SmartToy,
+                        contentDescription = "Devin AI",
+                        tint = Color(0xFF58A6FF),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
                 if (isBuilding) {
                     Surface(
                         shape = CircleShape,
@@ -509,5 +523,13 @@ private fun NavPreview(phase: String) {
                 }
             }
         }
+    }
+
+    // Devin AI Dialog
+    if (showDevin) {
+        DevinScreen(
+            serverUrl = "http://${state.serverHost}:${state.serverPort}",
+            onNavigateBack = { showDevin = false }
+        )
     }
 }
