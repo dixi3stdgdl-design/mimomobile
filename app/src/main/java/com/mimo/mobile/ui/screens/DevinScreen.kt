@@ -1,10 +1,12 @@
 package com.mimo.mobile.ui.screens
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -22,6 +24,9 @@ import androidx.compose.ui.unit.sp
 import com.mimo.mobile.ui.theme.MiMoPurple
 import com.mimo.mobile.ui.theme.MiMoCyan
 import com.mimo.mobile.ui.theme.MiMoDarkBg
+import com.mimo.mobile.viewmodel.DevinNotification
+import com.mimo.mobile.viewmodel.DevinNotificationService
+import com.mimo.mobile.viewmodel.NotificationUiState
 
 data class DevinTask(
     val id: String,
@@ -43,6 +48,27 @@ fun DevinScreen(
     var isExecuting by remember { mutableStateOf(false) }
     var outputLog by remember { mutableStateOf(listOf<String>()) }
     var showOutput by remember { mutableStateOf(false) }
+    var showNotifications by remember { mutableStateOf(false) }
+
+    // Notification service
+    val notificationService = remember { DevinNotificationService() }
+    val notifications by notificationService.notifications.collectAsState()
+    val notificationState by notificationService.uiState.collectAsState()
+
+    // Connect to WebSocket on mount
+    LaunchedEffect(serverUrl) {
+        val host = serverUrl.removePrefix("http://").removePrefix("https://").split(":")[0]
+        val port = serverUrl.split(":").lastOrNull()?.split("/")?.first()?.toIntOrNull() ?: 8765
+        notificationService.connect(host, port)
+    }
+
+    // Collect new notifications
+    LaunchedEffect(Unit) {
+        notificationService.newNotification.collect { notification ->
+            outputLog = listOf("[${java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}] ${notification.title}: ${notification.message}") + outputLog
+            showOutput = true
+        }
+    }
 
     val tasks = listOf(
         DevinTask(
@@ -121,6 +147,57 @@ fun DevinScreen(
                             contentDescription = null,
                             tint = MiMoCyan,
                             modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Devin AI", color = Color.White)
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    // Notifications button with badge
+                    BadgedBox(
+                        badge = {
+                            if (notifications.isNotEmpty()) {
+                                Badge(
+                                    containerColor = Color(0xFFFF5252),
+                                    contentColor = Color.White
+                                ) {
+                                    Text("${notifications.size}", fontSize = 10.sp)
+                                }
+                            }
+                        }
+                    ) {
+                        IconButton(onClick = { showNotifications = !showNotifications }) {
+                            Icon(
+                                Icons.Default.Notifications,
+                                contentDescription = "Notifications",
+                                tint = if (notifications.isNotEmpty()) Color(0xFFFFD700) else Color.White
+                            )
+                        }
+                    }
+                    // Connection status indicator
+                    Icon(
+                        Icons.Default.Circle,
+                        contentDescription = "Connection status",
+                        tint = when (notificationState) {
+                            is NotificationUiState.Connected -> Color(0xFF4CAF50)
+                            is NotificationUiState.Disconnected -> Color(0xFFFF5252)
+                            else -> Color(0xFFFFD700)
+                        },
+                        modifier = Modifier
+                            .padding(end = 8.dp)
+                            .size(12.dp)
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MiMoDarkBg
+                )
+            )
+        },
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Devin AI", color = Color.White)
@@ -302,6 +379,124 @@ fun DevinScreen(
                         }
                     }
                 }
+            }
+
+            // Notifications Panel
+            if (showNotifications && notifications.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(250.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = Color(0xFF1E1E2E)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Notificaciones (${notifications.size})",
+                                color = Color(0xFFFFD700),
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row {
+                                TextButton(
+                                    onClick = { notificationService.clearAll() }
+                                ) {
+                                    Text("Limpiar", color = Color.White.copy(alpha = 0.6f), fontSize = 10.sp)
+                                }
+                                IconButton(
+                                    onClick = { showNotifications = false },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Close,
+                                        contentDescription = "Close",
+                                        tint = Color.White.copy(alpha = 0.5f),
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            items(notifications) { notification ->
+                                NotificationItem(
+                                    notification = notification,
+                                    onClick = { notificationService.markAsRead(notification.id) }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun NotificationItem(
+    notification: DevinNotification,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+            .clickable(onClick = onClick),
+        colors = CardDefaults.cardColors(
+            containerColor = if (notification.read) Color(0xFF161B22) else Color(0xFF21262D)
+        ),
+        shape = RoundedCornerShape(6.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(10.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // Status indicator
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(
+                        when (notification.status) {
+                            "completed" -> Color(0xFF4CAF50)
+                            "failed" -> Color(0xFFFF5252)
+                            "running" -> Color(0xFFFFD700)
+                            else -> Color(0xFF90A4AE)
+                        }
+                    )
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = notification.title,
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = notification.message,
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 11.sp,
+                    maxLines = 2
+                )
+                Text(
+                    text = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(notification.timestamp)),
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 9.sp
+                )
             }
         }
     }
