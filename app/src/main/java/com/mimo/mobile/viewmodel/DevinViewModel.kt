@@ -41,8 +41,13 @@ class DevinViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = DevinUiState.Loading
             try {
-                val url = "$serverUrl/api/devin/execute?task=$task&branch=$branch&description=$description"
-                val response = makeRequest(url)
+                val url = "$serverUrl/api/devin/execute"
+                val body = JSONObject().apply {
+                    put("task", task)
+                    put("branch", branch)
+                    put("description", description)
+                }
+                val response = makePostRequest(url, body.toString())
                 val json = JSONObject(response)
                 
                 if (json.has("session_id")) {
@@ -103,8 +108,11 @@ class DevinViewModel : ViewModel() {
     fun cancelTask(sessionId: String) {
         viewModelScope.launch {
             try {
-                val url = "$serverUrl/api/devin/cancel?session_id=$sessionId"
-                makeRequest(url)
+                val url = "$serverUrl/api/devin/cancel"
+                val body = JSONObject().apply {
+                    put("session_id", sessionId)
+                }
+                makePostRequest(url, body.toString())
                 _currentSession.value = _currentSession.value?.copy(status = "cancelled")
             } catch (e: Exception) {
                 _uiState.value = DevinUiState.Error(e.message ?: "Failed to cancel")
@@ -153,6 +161,25 @@ class DevinViewModel : ViewModel() {
         connection.readTimeout = 30000
         
         return try {
+            connection.inputStream.bufferedReader().readText()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun makePostRequest(urlStr: String, jsonBody: String): String {
+        val url = URL(urlStr)
+        val connection = url.openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.connectTimeout = 10000
+        connection.readTimeout = 30000
+        connection.doOutput = true
+        
+        return try {
+            connection.outputStream.bufferedWriter().use { writer ->
+                writer.write(jsonBody)
+            }
             connection.inputStream.bufferedReader().readText()
         } finally {
             connection.disconnect()
